@@ -20,16 +20,7 @@
 #include "daisysp.h"
 #include "flick_oscillator.h"
 #include "flick_filters.hpp"
-#if defined(PLATFORM_hothouse)
-#include "hothouse.h"
-namespace flick {
-// Alias Hothouse hardware to Funbox so the rest of the code can reuse
-// the same names and control logic across platforms.
-using Funbox = clevelandmusicco::Hothouse;
-}
-#else
-#include "funbox_gpl.h"
-#endif
+#include "daisy_hardware.h"
 #include "hall_reverb.h"
 #include "spring_reverb.h"
 #include "Dattorro.hpp"

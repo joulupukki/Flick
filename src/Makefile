@@ -7,20 +7,16 @@ PLATFORM ?= funbox
 #USE_DAISYSP_LGPL=1
 
 # Base sources (common to all platforms)
-CPP_SOURCES = flick.cpp flick_oscillator.cpp hall_reverb.cpp spring_reverb.cpp
+CPP_SOURCES = flick.cpp flick_oscillator.cpp hall_reverb.cpp spring_reverb.cpp daisy_hardware.cpp
 
 # Base includes
 C_INCLUDES = -I.. -I./PlateauNEVersio
 
-# Platform-specific sources
-ifeq ($(PLATFORM),funbox)
-    CPP_SOURCES += ../platforms/funbox/funbox_gpl.cpp
-    C_INCLUDES += -I../platforms/funbox
-else ifeq ($(PLATFORM),hothouse)
-    CPP_SOURCES += ../platforms/hothouse/hothouse.cpp
-    C_INCLUDES += -I../platforms/hothouse
-else
+# Platform guard
+ifneq ($(PLATFORM),funbox)
+ifneq ($(PLATFORM),hothouse)
     $(error Invalid PLATFORM value: $(PLATFORM). Must be funbox or hothouse)
+endif
 endif
 
 # Pass PLATFORM to compiler as a define
