@@ -74,7 +74,6 @@ To exit factory reset mode without resetting. Power off the pedal and power it b
 Press and hold Footswitch 1 to enter Program DFU mode. The lights will alternately flash quickly when DFU mode is entered.
 
 ### Build the Software
-Head to the [Electro-Smith Wiki](https://github.com/electro-smith/DaisyWiki) to learn how to set up the Daisy environment on your computer.
 
 ```
 # Clone the repository
@@ -85,7 +84,8 @@ $ cd Flick
 $ git submodule update --init --recursive
 
 # Build the daisy libraries (after installing the Daisy Toolchain):
-# **IMPORTANT**: If you are planning to build this for **FunBox**, replace the daisy_petal files in `libDaisy/src` with the files in the `platforms/funbox/required_daisy_mods/` directory to properly map controls on Funbox.
+#
+# IMPORTANT: If you are planning to build this for FunBox, replace the daisy_petal files in `libDaisy/src` with the files in the `platforms/funbox/required_daisy_mods/` directory to properly map controls on Funbox.
 
 $ make -C libDaisy
 $ make -C DaisySP
