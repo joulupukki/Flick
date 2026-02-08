@@ -1,0 +1,33 @@
+{
+    "configurations": [
+        {
+            "name": "Daisy Hothouse",
+            "includePath": [
+                "${workspaceFolder}/src/**",
+                "${workspaceFolder}/libDaisy/src/**",
+                "${workspaceFolder}/libDaisy/core/**",
+                "${workspaceFolder}/libDaisy/Drivers/STM32H7xx_HAL_Driver/Inc",
+                "${workspaceFolder}/libDaisy/Drivers/CMSIS-Device/ST/STM32H7xx/Include",
+                "${workspaceFolder}/libDaisy/Drivers/CMSIS_5/CMSIS/Core/Include",
+                "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Host_Library/Core/Inc",
+                "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+                "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
+                "${workspaceFolder}/libDaisy/Middlewares/Third_Party/FatFs/src",
+                "${workspaceFolder}/DaisySP/Source/**"
+            ],
+            "defines": [
+                "PLATFORM_hothouse",
+                "STM32H750xx",
+                "USE_HAL_DRIVER",
+                "CORE_CM7",
+                "__STATIC_INLINE=static inline",
+                "__weak=__attribute__((weak))"
+            ],
+            "compilerPath": "/usr/local/bin/arm-none-eabi-g++",
+            "cStandard": "c11",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}
