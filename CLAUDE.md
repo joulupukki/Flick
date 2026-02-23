@@ -48,7 +48,7 @@ The `DaisyHardware` class (aliased as `Funbox`) provides a unified hardware prox
 - Configurable audio sample rate and block size
 - ADC management for analog controls (knobs)
 - Switch debouncing for all digital inputs
-- DFU bootloader entry via long-press
+- DFU bootloader entry via simultaneous long-press of both footswitches
 
 ### Audio Processing Pipeline
 
@@ -169,10 +169,19 @@ Simple digital delay with:
 **Normal Mode** (`PEDAL_MODE_NORMAL`)
 - Standard pedal operation
 - Controls mapped to effect parameters
-- Footswitches toggle effects on/off
+- Footswitch gestures:
+  - Footswitch 1 (Left):
+    - Single press: Toggle reverb on/off
+    - Long press: Enter reverb edit mode
+  - Footswitch 2 (Right):
+    - Single press: Toggle tremolo on/off
+    - Double press: Toggle delay on/off
+    - Long press: Enter mono-stereo edit mode
+  - Both footswitches:
+    - Simultaneous long press: Enter DFU (bootloader) mode
 
 **Reverb Edit Mode** (`PEDAL_MODE_EDIT_REVERB`)
-- Activated by double-press of Footswitch 1
+- Activated by long-press of Footswitch 1
 - Both LEDs flash together
 - Uses parameter capture (soft takeover) to prevent sudden jumps
 - Knobs control reverb parameters:
@@ -288,8 +297,12 @@ make PLATFORM=hothouse
 | Switch 1 | Reverb mode | Mod speed | - |
 | Switch 2 | Trem type | Mod depth | - |
 | Switch 3 | Makeup gain | Mod shape | Mono/Stereo |
-| FSW 1 | Reverb on/off | Cancel | Cancel |
-| FSW 2 | Delay on/off | Save | Save |
+| FSW 1 Single | Reverb on/off | Cancel | Cancel |
+| FSW 1 Long | Enter reverb edit | - | - |
+| FSW 2 Single | Tremolo on/off | Save | Save |
+| FSW 2 Double | Delay on/off | - | - |
+| FSW 2 Long | Enter mono-stereo edit | - | - |
+| Both FSW Long | DFU mode | - | - |
 
 **LED Indicators:**
 - Left LED: Reverb on/off
@@ -368,7 +381,7 @@ SETTINGS_VERSION = 4  // Increment on Settings struct change
 
 ### Debugging
 - USB Serial: `hw.seed.PrintLine()`
-- DFU mode: Hold Footswitch 1 for 2 seconds
+- DFU mode: Hold both footswitches simultaneously for 2 seconds
 - Factory reset: Footswitch 2 during boot
 
 ## Dependencies (Not Analyzed)

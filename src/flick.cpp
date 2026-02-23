@@ -256,6 +256,9 @@ bool bypass_verb = true;
 bool bypass_trem = true;
 bool bypass_delay = true;
 
+// DFU mode trigger
+bool trigger_dfu_mode = false;
+
 // Main Harmonic Tremolo Filters
 LowPassFilter harmonic_trem_lpf_L;
 LowPassFilter harmonic_trem_lpf_R;
@@ -475,7 +478,6 @@ void handleNormalPress(Funbox::Switches footswitch) {
     // Only save the settings if the RIGHT footswitch is pressed in edit mode.
     // The LEFT footswitch is used to exit edit mode without saving.
     if (footswitch == Funbox::FOOTSWITCH_2) {
-      // Save the settings
       saveSettings();
     } else {
       restoreReverbSettings();
@@ -500,8 +502,10 @@ void handleNormalPress(Funbox::Switches footswitch) {
       // Save the mono-stereo settings
       saveMonoStereoSettings();
     } else {
+      // Cancel: restore mono-stereo settings AND bypass states
       restoreMonoStereoSettings();
     }
+
     pedal_mode = PEDAL_MODE_NORMAL;
   } else {
     if (footswitch == Funbox::FOOTSWITCH_1) {
@@ -513,11 +517,12 @@ void handleNormalPress(Funbox::Switches footswitch) {
         verb.clear();
       }
     } else {
-      bypass_delay = !bypass_delay;
+      // FOOTSWITCH_2: Toggle tremolo on/off
+      bypass_trem = !bypass_trem;
     }
-  }
 
-  saveBypassStates();
+    saveBypassStates();
+  }
 }
 
 void handleDoublePress(Funbox::Switches footswitch) {
@@ -530,9 +535,35 @@ void handleDoublePress(Funbox::Switches footswitch) {
   // processed, so reverse that right off the bat.
   handleNormalPress(footswitch);
 
-  if (footswitch == Funbox::FOOTSWITCH_1) {
-    // Go into reverb edit mode
-    // Capture all current parameter values
+  if (footswitch == Funbox::FOOTSWITCH_2) {
+    // FOOTSWITCH_2 double press: Toggle delay on/off
+    bypass_delay = !bypass_delay;
+
+    saveBypassStates();
+  }
+  // FOOTSWITCH_1 double press: No action (reserved for potential future use)
+}
+
+void handleLongPress(Funbox::Switches footswitch) {
+
+  // Ignore long presses in edit modes
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
+    return;
+  }
+
+  // When long press is detected, a normal press was already detected and
+  // processed, so reverse that right off the bat.
+  handleNormalPress(footswitch);
+
+  // Check if both footswitches are pressed simultaneously - enter DFU mode
+  bool both_pressed = hw.switches[Funbox::FOOTSWITCH_1].Pressed() &&
+                      hw.switches[Funbox::FOOTSWITCH_2].Pressed();
+
+  if (both_pressed) {
+    // Set flag to trigger DFU mode in main loop (where LED blinking works properly)
+    trigger_dfu_mode = true;
+  } else if (footswitch == Funbox::FOOTSWITCH_1) {
+    // FOOTSWITCH_1 long press: Enter reverb edit mode
     p_knob_2_capture.Capture(plate_pre_delay);
     p_knob_3_capture.Capture(plate_decay);
     p_knob_4_capture.Capture(plate_tank_diffusion);
@@ -545,22 +576,7 @@ void handleDoublePress(Funbox::Switches footswitch) {
     bypass_verb = false; // Make sure that reverb is ON
     pedal_mode = PEDAL_MODE_EDIT_REVERB;
   } else if (footswitch == Funbox::FOOTSWITCH_2) {
-    // Toggle the trem bypass
-    bypass_trem = !bypass_trem;
-
-    saveBypassStates();
-  }
-}
-
-void handleLongPress(Funbox::Switches footswitch) {
-  if (footswitch == Funbox::FOOTSWITCH_2) {
-    // If the right footswitch is long-pressed, enter mono-stereo config.
-    // Available on both platforms.
-
-    // Turn on reverb and turn off the other effects
-    bypass_verb = false;
-    bypass_delay = true;
-    bypass_trem = true;
+    // FOOTSWITCH_2 long press: Enter mono-stereo config.
     pedal_mode = PEDAL_MODE_EDIT_MONO_STEREO;
   }
 }
@@ -998,7 +1014,33 @@ int main() {
     if(trigger_settings_save) {
 			SavedSettings.Save(); // Writing locally stored settings to the external flash
 			trigger_settings_save = false;
-		} else if (is_factory_reset_mode) {
+		} else if (trigger_dfu_mode) {
+      // Shut 'er down so the LEDs always flash
+      hw.StopAdc();
+      hw.StopAudio();
+
+      Led _led_1, _led_2;
+      _led_1.Init(hw.seed.GetPin(22), false);
+      _led_2.Init(hw.seed.GetPin(23), false);
+
+      // Alternately flash the LEDs 3 times
+      for (int i = 0; i < 3; i++) {
+        _led_1.Set(1);
+        _led_2.Set(0);
+        _led_1.Update();
+        _led_2.Update();
+        System::Delay(100);
+
+        _led_1.Set(0);
+        _led_2.Set(1);
+        _led_1.Update();
+        _led_2.Update();
+        System::Delay(100);
+      }
+
+      // Reset system to bootloader after LED flashing
+      System::ResetToBootloader();
+    } else if (is_factory_reset_mode) {
       hw.ProcessAllControls();
 
       static uint32_t last_led_toggle_time = 0;
@@ -1046,11 +1088,6 @@ int main() {
       }
     }
     hw.DelayMs(10);
-
-    // Call System::ResetToBootloader() if FOOTSWITCH_1 is pressed for 2 seconds
-    if (pedal_mode == PEDAL_MODE_NORMAL) {
-      hw.CheckResetToBootloader();
-    }
   }
   return 0;
 }

@@ -29,8 +29,8 @@ Feature demo video (28 June 2025):
 | SWITCH 1 | Reverb knob funcion | **LOW** - 100% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 0% Dry, 0-100% Wet |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
 | SWITCH 3 | Trem & Delay Makeup Gain | **LOW** - None<br/>**MID** - Normal<br/>**HIGH** - Plus |
-| FOOTSWITCH 1 | Reverb On/Off | Normal press toggles reverb on/off.<br/>Double press toggles reverb edit mode (see below).<br/>Long press for DFU mode. |
-| FOOTSWITCH 2 | Delay/Tremolo On/Off | Normal press toggles delay.<br/>Double press toggles tremolo.<br/><br/>**LED:**<br/>- 100% when only relay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Mono-Stereo Edit mode (see below). |
+| FOOTSWITCH 1 | Reverb On/Off | Normal press toggles reverb on/off.<br/>Long press toggles reverb edit mode (see below). |
+| FOOTSWITCH 2 | Tremolo/Delay On/Off | Normal press toggles tremolo.<br/>Double press toggles delay.<br/><br/>**LED:**<br/>- 100% when only delay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Mono-Stereo Edit mode (see below). |
 
 ### Controls (Reverb Edit Mode)
 *Both LEDs flash when in edit mode.*
@@ -48,7 +48,7 @@ Feature demo video (28 June 2025):
 | SWITCH 1 | Tank Mod Speed | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
 | SWITCH 2 | Tank Mod Depth | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
 | SWITCH 3 | Tank Mod Shape | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
-| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Reverb Edit Mode.<br/>Long press for DFU mode. |
+| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Reverb Edit Mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Reverb Edit Mode. |
 
 ### Controls (Mono-Stereo Edit Mode)
@@ -57,7 +57,7 @@ Feature demo video (28 June 2025):
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
 | SWITCH 3 | Mono-Stereo Mode | **LOW** - Mono in, Mono Out<br/>**MID** - Mono in, Stereo Out<br/>**HIGH** - Stereo In, Stereo Out |
-| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Mono-Stereo Edit Mode.<br/>Long press for DFU mode. |
+| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Mono-Stereo Edit Mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Mono-Stereo Edit Mode. |
 
 ### Factory Reset (Restore default reverb parameters)
@@ -73,7 +73,7 @@ To exit factory reset mode without resetting. Power off the pedal and power it b
 
 ### Enter Program DFU Mode
 
-Press and hold Footswitch 1 to enter Program DFU mode. The lights will alternately flash quickly when DFU mode is entered.
+Press and hold **both footswitches simultaneously** for 5 seconds to enter Program DFU mode. The lights will alternately flash 3 times when DFU mode is entered.
 
 ### Build the Software
 
