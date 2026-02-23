@@ -1,5 +1,13 @@
 # Flick - Digital Guitar Pedal
 
+## Development Workflow
+
+**IMPORTANT: Git Commit Policy**
+- **NEVER** commit or push changes without explicit user approval
+- After making changes, present a summary and wait for approval
+- Only commit/push when the user explicitly says to do so
+- If uncertain, always ask before committing
+
 ## Project Overview
 
 Flick is a multi-effect digital guitar pedal firmware for the Daisy Seed module. It combines reverb, tremolo, and delay effects, designed to replace the Strymon Flint with additional delay capabilities. The project is licensed under GPLv3.
