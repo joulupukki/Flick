@@ -35,17 +35,19 @@ Feature demo video (28 June 2025):
 ### Controls (Reverb Edit Mode)
 *Both LEDs flash when in edit mode.*
 
+**Parameter Capture:** When entering reverb edit mode, all knobs and switches freeze at their current values. To prevent sudden parameter jumps, each control remains frozen until you move it beyond a threshold (5% for knobs, any position change for switches). This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
+
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
 | KNOB 1 | Reverb Amount (Wet) | Not saved. Just here for convenience. |
-| KNOB 2 | Pre Delay | 0 for Off, up to 0.25 |
-| KNOB 3 | Decay |  |
-| KNOB 4 | Tank Diffusion |  |
-| KNOB 5 | Input High Cutoff Frequency |  |
-| KNOB 6 | Tank High Cutoff Frequency |  |
-| SWITCH 1 | Tank Mod Speed | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High |
-| SWITCH 2 | Tank Mod Depth | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High |
-| SWITCH 3 | Tank Mod Shape | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High |
+| KNOB 2 | Pre Delay | 0 for Off, up to 0.25<br/>**Frozen until moved >5%** |
+| KNOB 3 | Decay | **Frozen until moved >5%** |
+| KNOB 4 | Tank Diffusion | **Frozen until moved >5%** |
+| KNOB 5 | Input High Cutoff Frequency | **Frozen until moved >5%** |
+| KNOB 6 | Tank High Cutoff Frequency | **Frozen until moved >5%** |
+| SWITCH 1 | Tank Mod Speed | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
+| SWITCH 2 | Tank Mod Depth | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
+| SWITCH 3 | Tank Mod Shape | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
 | FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Reverb Edit Mode.<br/>Long press for DFU mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Reverb Edit Mode. |
 

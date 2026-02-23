@@ -153,6 +153,15 @@ Simple digital delay with:
 - `PeakingEQ`: Biquad peaking/notch filter
 - `LowShelf`: Biquad low-shelf filter
 
+**Parameter Capture** - [parameter_capture.h](src/parameter_capture.h)
+- `KnobCapture`: Soft takeover for knob parameters in edit modes
+- `SwitchCapture`: Soft takeover for toggle switch parameters
+- Prevents sudden parameter jumps when entering edit modes
+- Captures current value on mode entry, freezes parameter updates
+- Knobs activate after 5% movement threshold
+- Switches activate on position change
+- Drop-in replacement for `Parameter::Process()` in audio callback
+
 ### Operational Modes
 
 [flick.cpp](src/flick.cpp:86-103)
@@ -165,13 +174,17 @@ Simple digital delay with:
 **Reverb Edit Mode** (`PEDAL_MODE_EDIT_REVERB`)
 - Activated by double-press of Footswitch 1
 - Both LEDs flash together
+- Uses parameter capture (soft takeover) to prevent sudden jumps
 - Knobs control reverb parameters:
-  - Knob 2: Pre-delay
+  - Knob 2: Pre-delay (scaled 0.25x)
   - Knob 3: Decay
   - Knob 4: Tank diffusion
-  - Knob 5: Input high-cut frequency
-  - Knob 6: Tank high-cut frequency
-- Toggle switches control modulation (speed/depth/shape)
+  - Knob 5: Input high-cut frequency (scaled 10x)
+  - Knob 6: Tank high-cut frequency (scaled 10x)
+- Toggle switches control modulation (speed/depth/shape):
+  - Switch 1: Tank Mod Speed (0.5, 0.25, 0.1 → scaled by `PLATE_TANK_MOD_SPEED_SCALE` when applied)
+  - Switch 2: Tank Mod Depth (0.5, 0.25, 0.1 → scaled by `PLATE_TANK_MOD_DEPTH_SCALE` when applied)
+  - Switch 3: Tank Mod Shape (0.5, 0.25, 0.1)
 - Footswitch 1: Cancel (restore previous)
 - Footswitch 2: Save to flash
 
@@ -307,6 +320,7 @@ Abstraction layer maps both to (RIGHT/MIDDLE/LEFT) = (0/1/2)
 src/
 ├── flick.cpp                    # Main program, audio callback
 ├── daisy_hardware.h/cpp         # Hardware abstraction layer
+├── parameter_capture.h          # Soft takeover for edit modes
 ├── flick_oscillator.h/cpp       # LFO/oscillator for tremolo
 ├── flick_filters.hpp            # DSP filter implementations
 ├── hall_reverb.h/cpp            # Schroeder hall reverb
@@ -327,6 +341,8 @@ SAMPLE_RATE = 48000.0f
 MAX_DELAY = 96000 samples (2 seconds)
 TREMOLO_SPEED_MIN = 0.2 Hz
 TREMOLO_SPEED_MAX = 16.0 Hz
+PLATE_TANK_MOD_SPEED_SCALE = 8.0f   // Dattorro reverb speed scaling
+PLATE_TANK_MOD_DEPTH_SCALE = 15.0f  // Dattorro reverb depth scaling
 SETTINGS_VERSION = 4  // Increment on Settings struct change
 ```
 

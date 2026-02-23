@@ -65,6 +65,10 @@ constexpr float DELAY_TIME_MIN_SECONDS = 0.05f;
 constexpr float DELAY_WET_MIX_ATTENUATION = 0.333f; // Attenuation for wet delay signal
 constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet percentage
 
+// Reverb constants (Dattorro plate reverb scaling)
+constexpr float PLATE_TANK_MOD_SPEED_SCALE = 8.0f;  // Multiplier for tank modulation speed
+constexpr float PLATE_TANK_MOD_DEPTH_SCALE = 15.0f; // Multiplier for tank modulation depth
+
 // Filter Frequency constants
 constexpr float NOTCH_1_FREQ = 6020.0f; // Daisy Seed resonance notch
 constexpr float NOTCH_2_FREQ = 12278.0f; // Daisy Seed resonance notch
@@ -170,14 +174,14 @@ constexpr float tank_mod_depth_values[] = {0.5f, 0.25f, 0.1f};
 constexpr float tank_mod_shape_values[] = {0.5f, 0.25f, 0.1f};
 
 // Reverb edit mode parameter captures
-KnobCapture pre_delay_capture(p_knob_2);
-KnobCapture decay_capture(p_knob_3);
-KnobCapture diffusion_capture(p_knob_4);
-KnobCapture input_cutoff_capture(p_knob_5);
-KnobCapture tank_cutoff_capture(p_knob_6);
-SwitchCapture mod_speed_capture(hw, Funbox::TOGGLESWITCH_1);
-SwitchCapture mod_depth_capture(hw, Funbox::TOGGLESWITCH_2);
-SwitchCapture mod_shape_capture(hw, Funbox::TOGGLESWITCH_3);
+KnobCapture p_knob_2_capture(p_knob_2);
+KnobCapture p_knob_3_capture(p_knob_3);
+KnobCapture p_knob_4_capture(p_knob_4);
+KnobCapture p_knob_5_capture(p_knob_5);
+KnobCapture p_knob_6_capture(p_knob_6);
+SwitchCapture p_sw1_capture(hw, Funbox::TOGGLESWITCH_1);
+SwitchCapture p_sw2_capture(hw, Funbox::TOGGLESWITCH_2);
+SwitchCapture p_sw3_capture(hw, Funbox::TOGGLESWITCH_3);
 
 struct Delay {
   DelayLine<float, MAX_DELAY> *del;
@@ -390,8 +394,8 @@ void loadSettings() {
   verb.setDecay(plate_decay);
   verb.setTankDiffusion(plate_tank_diffusion);
   verb.setTankFilterHighCutFrequency(plate_tank_damp_high);
-  verb.setTankModSpeed(plate_tank_mod_speed * 8);
-  verb.setTankModDepth(plate_tank_mod_depth * 15);
+  verb.setTankModSpeed(plate_tank_mod_speed * PLATE_TANK_MOD_SPEED_SCALE);
+  verb.setTankModDepth(plate_tank_mod_depth * PLATE_TANK_MOD_DEPTH_SCALE);
   verb.setTankModShape(plate_tank_mod_shape);
 }
 
@@ -448,10 +452,10 @@ void restoreReverbSettings() {
   verb.setInputFilterHighCutoffPitch(plate_input_damp_high);
   verb.setTankFilterHighCutFrequency(plate_tank_damp_high);
 
-  verb.setTankModSpeed(plate_tank_mod_speed * 8);
-  verb.setTankModDepth(plate_tank_mod_depth * 15);
+  verb.setTankModSpeed(plate_tank_mod_speed * PLATE_TANK_MOD_SPEED_SCALE);
+  verb.setTankModDepth(plate_tank_mod_depth * PLATE_TANK_MOD_DEPTH_SCALE);
   verb.setTankModShape(plate_tank_mod_shape);
-  verb.setPreDelay(plate_pre_delay);    
+  verb.setPreDelay(plate_pre_delay);
 }
 
 /// @brief Restore the mono-stereo settings from the saved settings.
@@ -474,14 +478,14 @@ void handleNormalPress(Funbox::Switches footswitch) {
     }
 
     // Reset all parameter captures when exiting reverb edit mode
-    pre_delay_capture.Reset();
-    decay_capture.Reset();
-    diffusion_capture.Reset();
-    input_cutoff_capture.Reset();
-    tank_cutoff_capture.Reset();
-    mod_speed_capture.Reset();
-    mod_depth_capture.Reset();
-    mod_shape_capture.Reset();
+    p_knob_2_capture.Reset();
+    p_knob_3_capture.Reset();
+    p_knob_4_capture.Reset();
+    p_knob_5_capture.Reset();
+    p_knob_6_capture.Reset();
+    p_sw1_capture.Reset();
+    p_sw2_capture.Reset();
+    p_sw3_capture.Reset();
 
     pedal_mode = PEDAL_MODE_NORMAL;
   } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
@@ -525,14 +529,14 @@ void handleDoublePress(Funbox::Switches footswitch) {
   if (footswitch == Funbox::FOOTSWITCH_1) {
     // Go into reverb edit mode
     // Capture all current parameter values
-    pre_delay_capture.Capture(plate_pre_delay);
-    decay_capture.Capture(plate_decay);
-    diffusion_capture.Capture(plate_tank_diffusion);
-    input_cutoff_capture.Capture(plate_input_damp_high);
-    tank_cutoff_capture.Capture(plate_tank_damp_high);
-    mod_speed_capture.Capture(plate_tank_mod_speed);
-    mod_depth_capture.Capture(plate_tank_mod_depth);
-    mod_shape_capture.Capture(plate_tank_mod_shape);
+    p_knob_2_capture.Capture();
+    p_knob_3_capture.Capture();
+    p_knob_4_capture.Capture();
+    p_knob_5_capture.Capture();
+    p_knob_6_capture.Capture();
+    p_sw1_capture.Capture();
+    p_sw2_capture.Capture();
+    p_sw3_capture.Capture();
 
     bypass_verb = false; // Make sure that reverb is ON
     pedal_mode = PEDAL_MODE_EDIT_REVERB;
@@ -688,24 +692,24 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     plate_dry = 1.0; // Always use dry 100% in edit mode
 
     // Use capture objects - pass calculated values, they return frozen or current based on movement
-    plate_pre_delay = pre_delay_capture.Process(p_knob_2.Process() * 0.25f);
-    plate_decay = decay_capture.Process(p_knob_3.Process());
-    plate_tank_diffusion = diffusion_capture.Process(p_knob_4.Process());
-    plate_input_damp_high = input_cutoff_capture.Process(p_knob_5.Process() * 10.0f);
-    plate_tank_damp_high = tank_cutoff_capture.Process(p_knob_6.Process() * 10.0f);
-    plate_tank_mod_speed = mod_speed_capture.Process(tank_mod_speed_values[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)]);
-    plate_tank_mod_depth = mod_depth_capture.Process(tank_mod_depth_values[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_2)]);
-    plate_tank_mod_shape = mod_shape_capture.Process(tank_mod_shape_values[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)]);
+    plate_pre_delay = p_knob_2_capture.Process() * 0.25f;
+    plate_decay = p_knob_3_capture.Process();
+    plate_tank_diffusion = p_knob_4_capture.Process();
+    plate_input_damp_high = p_knob_5_capture.Process() * 10.0f;
+    plate_tank_damp_high = p_knob_6_capture.Process() * 10.0f;
+    plate_tank_mod_speed = tank_mod_speed_values[p_sw1_capture.Process()];
+    plate_tank_mod_depth = tank_mod_depth_values[p_sw2_capture.Process()];
+    plate_tank_mod_shape = tank_mod_shape_values[p_sw3_capture.Process()];
 
     verb.setDecay(plate_decay);
     verb.setTankDiffusion(plate_tank_diffusion);
     verb.setInputFilterHighCutoffPitch(plate_input_damp_high);
     verb.setTankFilterHighCutFrequency(plate_tank_damp_high);
 
-    verb.setTankModSpeed(plate_tank_mod_speed * 8);
-    verb.setTankModDepth(plate_tank_mod_depth * 15);
+    verb.setTankModSpeed(plate_tank_mod_speed * PLATE_TANK_MOD_SPEED_SCALE);
+    verb.setTankModDepth(plate_tank_mod_depth * PLATE_TANK_MOD_DEPTH_SCALE);
     verb.setTankModShape(plate_tank_mod_shape);
-    verb.setPreDelay(plate_pre_delay);    
+    verb.setPreDelay(plate_pre_delay);
   } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
     // Mono-Stereo edit mode
     // Read in the mono-stereo mode from toggle switch 3
@@ -835,8 +839,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         verb.setTankDiffusion(plate_tank_diffusion);
         verb.setInputFilterHighCutoffPitch(plate_input_damp_high);
         verb.setTankFilterHighCutFrequency(plate_tank_damp_high);
-        verb.setTankModSpeed(plate_tank_mod_speed * 8);
-        verb.setTankModDepth(plate_tank_mod_depth * 15);
+        verb.setTankModSpeed(plate_tank_mod_speed * PLATE_TANK_MOD_SPEED_SCALE);
+        verb.setTankModDepth(plate_tank_mod_depth * PLATE_TANK_MOD_DEPTH_SCALE);
         verb.setTankModShape(plate_tank_mod_shape);
         verb.setPreDelay(plate_pre_delay);
         verb.process(left_input * gain, right_input * gain);

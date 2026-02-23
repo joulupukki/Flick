@@ -47,8 +47,7 @@ public:
    * @param threshold Movement threshold (0.0-1.0) required to activate, default 0.05
    */
   explicit KnobCapture(daisy::Parameter& knob, float threshold = 0.05f)
-      : knob_(knob), frozen_value_(0.0f), baseline_control_(0.0f),
-        is_active_(true), threshold_(threshold) {}
+      : knob_(knob), frozen_value_(0.0f), is_frozen_(false), threshold_(threshold) {}
 
   /**
    * @brief Freezes the current parameter value and records knob position.
@@ -57,42 +56,37 @@ public:
    * the current knob position is recorded as the baseline. Subsequent calls
    * to Process() will return the frozen value until the knob moves beyond
    * the threshold.
-   *
-   * @param current_param_value The current parameter value to freeze
    */
-  void Capture(float current_param_value) {
-    frozen_value_ = current_param_value;
-    baseline_control_ = knob_.Process();
-    is_active_ = false;
+  void Capture() {
+    frozen_value_ = knob_.Process();
+    is_frozen_ = true;
   }
 
   /**
-   * @brief Returns the parameter value based on capture state.
+   * @brief Returns the appropriate knob value based on capture state.
    *
-   * Pass the current calculated parameter value (e.g., p_knob.Process() * multiplier).
-   * Returns either the frozen value or passes through the current value based on whether
-   * the raw knob has moved beyond the threshold.
+   * In normal mode (not captured), returns the current knob position.
+   * In capture mode, returns the frozen value until the knob moves beyond
+   * the threshold, then activates and returns the current position.
    *
-   * The capture logic uses raw knob positions (0-1) for threshold detection but works
-   * with parameter values for freezing and returning. This keeps scaling logic in the
-   * calling code while the capture class only handles freeze/unfreeze behavior.
+   * This is designed to be a drop-in replacement for Parameter::Process()
+   * in the audio callback, with the caller applying any necessary scaling.
    *
-   * @param current_param_value The current calculated parameter value
-   * @return Parameter value (frozen or current)
+   * @return Raw knob value or frozen value
    */
-  float Process(float current_param_value) {
-    float current_control = knob_.Process();
+  float Process() {
+    float current_value = knob_.Process();
 
-    if (is_active_) {
+    if (!is_frozen_) {
       // Pass-through mode (normal operation or already activated)
-      return current_param_value;
+      return current_value;
     }
 
-    // Capture mode - check for movement using raw control values
-    if (std::fabs(current_control - baseline_control_) >= threshold_) {
-      // Threshold exceeded, activate and pass through current value
-      is_active_ = true;
-      return current_param_value;
+    // Capture mode - check for movement
+    if (std::fabs(current_value - frozen_value_) >= threshold_) {
+      // Threshold exceeded, activate and return current value
+      is_frozen_ = false;
+      return current_value;
     }
 
     // Still frozen, return the frozen parameter value
@@ -105,20 +99,19 @@ public:
    * Call this when exiting an edit mode to restore normal operation.
    */
   void Reset() {
-    is_active_ = true;
+    is_frozen_ = false;
   }
 
   /**
    * @brief Checks if the knob has been activated.
    * @return true if in pass-through mode or activated by movement
    */
-  bool IsActive() const { return is_active_; }
+  bool IsFrozen() const { return is_frozen_; }
 
 private:
   daisy::Parameter& knob_;    ///< Reference to the knob's Parameter object
-  float frozen_value_;        ///< Frozen parameter value from Capture()
-  float baseline_control_;    ///< Raw knob position when captured
-  bool is_active_;            ///< true = pass-through, false = frozen
+  float frozen_value_;        ///< Frozen parameter value
+  bool is_frozen_;            ///< true = frozen, false = pass-through
   float threshold_;           ///< Movement threshold for activation
 };
 
@@ -143,46 +136,38 @@ public:
    * @param switch_idx The toggle switch identifier (TOGGLESWITCH_1/2/3)
    */
   SwitchCapture(Funbox& hw, Funbox::Toggleswitch switch_idx)
-      : hw_(hw), switch_idx_(switch_idx),
-        frozen_value_(0.0f), baseline_position_(0), is_active_(true) {}
+      : hw_(hw), switch_idx_(switch_idx), frozen_value_(0), is_frozen_(false) {}
 
   /**
    * @brief Freezes the current parameter value and records switch position.
-   *
-   * @param current_param_value The current parameter value to freeze
    */
-  void Capture(float current_param_value) {
-    frozen_value_ = current_param_value;
-    baseline_position_ = hw_.GetToggleswitchPosition(switch_idx_);
-    is_active_ = false;
+  void Capture() {
+    frozen_value_ = hw_.GetToggleswitchPosition(switch_idx_);
+    is_frozen_ = true;
   }
 
   /**
-   * @brief Returns the parameter value based on capture state.
+   * @brief Returns the appropriate parameter value based on capture state.
    *
-   * Pass the current calculated parameter value (e.g., value_map[switch_position]).
-   * Returns either the frozen value or passes through the current value based on whether
-   * the switch has moved to a different position.
+   * In normal mode, looks up the value from the switch position.
+   * In capture mode, returns the frozen value until the switch moves to
+   * a different position.
    *
-   * The capture logic uses raw switch positions for change detection but works
-   * with parameter values for freezing and returning. This keeps lookup logic in the
-   * calling code while the capture class only handles freeze/unfreeze behavior.
-   *
-   * @param current_param_value The current calculated parameter value
-   * @return Parameter value (frozen or current)
+   * @return Parameter value (either frozen or looked up from current position)
    */
-  float Process(float current_param_value) {
-    if (is_active_) {
-      // Pass-through mode
-      return current_param_value;
+  int Process() {
+    int current_value = hw_.GetToggleswitchPosition(switch_idx_);
+
+
+    if (!is_frozen_) {
+      return current_value;
     }
 
-    // Capture mode - check for movement using raw switch position
-    int current_position = hw_.GetToggleswitchPosition(switch_idx_);
-    if (current_position != baseline_position_) {
-      // Switch moved, activate and pass through current value
-      is_active_ = true;
-      return current_param_value;
+    // Capture mode - check for movement
+    if (current_value != frozen_value_) {
+      // Switch moved, activate and return new value
+      is_frozen_ = false;
+      return current_value;
     }
 
     // Still frozen
@@ -193,21 +178,20 @@ public:
    * @brief Resets to pass-through mode.
    */
   void Reset() {
-    is_active_ = true;
+    is_frozen_ = false;
   }
 
   /**
    * @brief Checks if the switch has been activated.
    * @return true if in pass-through mode or activated by movement
    */
-  bool IsActive() const { return is_active_; }
+  bool IsFrozen() const { return is_frozen_; }
 
 private:
-  Funbox& hw_;                    ///< Reference to hardware object
+  Funbox& hw_;                      ///< Reference to hardware object
   Funbox::Toggleswitch switch_idx_; ///< Which toggle switch
-  float frozen_value_;            ///< Frozen parameter value
-  int baseline_position_;         ///< Switch position when captured
-  bool is_active_;                ///< true = pass-through, false = frozen
+  int frozen_value_;              ///< Frozen parameter value
+  bool is_frozen_;                  ///< true = frozen, false = pass-through
 };
 
 } // namespace flick
