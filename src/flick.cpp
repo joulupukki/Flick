@@ -685,11 +685,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       case Funbox::TOGGLESWITCH_MIDDLE:
         mono_stereo_mode = MS_MODE_MISO; // Mono In, Stereo Out
         break;
-      case Funbox::TOGGLESWITCH_LEFT: // Something odd is happening and it's opposite of what I expect
-        mono_stereo_mode = MS_MODE_SISO; // Stereo In, Stereo Out
-        break;
-      default:
+      case Funbox::TOGGLESWITCH_LEFT:
         mono_stereo_mode = MS_MODE_MIMO; // Mono In, Mono Out
+        break;
+      default: // TOGGLESWITCH_RIGHT
+        mono_stereo_mode = MS_MODE_SISO; // Stereo In, Stereo Out
     }
     updateReverbScales(mono_stereo_mode);
   }
