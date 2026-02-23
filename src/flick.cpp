@@ -24,6 +24,7 @@
 #include "hall_reverb.h"
 #include "spring_reverb.h"
 #include "Dattorro.hpp"
+#include "parameter_capture.h"
 #include <math.h>
 
 #if !defined(PLATFORM_funbox) && !defined(PLATFORM_hothouse)
@@ -32,6 +33,8 @@
 
 using flick::FlickOscillator;
 using flick::Funbox;
+using flick::KnobCapture;
+using flick::SwitchCapture;
 using daisy::AudioHandle;
 using daisy::Led;
 using daisy::Parameter;
@@ -160,6 +163,21 @@ Parameter p_trem_speed, p_trem_depth;
 Parameter p_delay_time, p_delay_feedback, p_delay_amt;
 
 Parameter p_knob_1, p_knob_2, p_knob_3, p_knob_4, p_knob_5, p_knob_6;
+
+// Reverb edit mode: value maps for switch parameters
+constexpr float tank_mod_speed_values[] = {0.5f, 0.25f, 0.1f};
+constexpr float tank_mod_depth_values[] = {0.5f, 0.25f, 0.1f};
+constexpr float tank_mod_shape_values[] = {0.5f, 0.25f, 0.1f};
+
+// Reverb edit mode parameter captures (with multipliers)
+KnobCapture pre_delay_capture(p_knob_2, 0.25f);      // p_knob_2.Process() * 0.25
+KnobCapture decay_capture(p_knob_3, 1.0f);           // p_knob_3.Process()
+KnobCapture diffusion_capture(p_knob_4, 1.0f);       // p_knob_4.Process()
+KnobCapture input_cutoff_capture(p_knob_5, 10.0f);  // p_knob_5.Process() * 10.0
+KnobCapture tank_cutoff_capture(p_knob_6, 10.0f);   // p_knob_6.Process() * 10.0
+SwitchCapture mod_speed_capture(hw, Funbox::TOGGLESWITCH_1, tank_mod_speed_values);
+SwitchCapture mod_depth_capture(hw, Funbox::TOGGLESWITCH_2, tank_mod_depth_values);
+SwitchCapture mod_shape_capture(hw, Funbox::TOGGLESWITCH_3, tank_mod_shape_values);
 
 struct Delay {
   DelayLine<float, MAX_DELAY> *del;
@@ -454,6 +472,17 @@ void handleNormalPress(Funbox::Switches footswitch) {
     } else {
       restoreReverbSettings();
     }
+
+    // Reset all parameter captures when exiting reverb edit mode
+    pre_delay_capture.Reset();
+    decay_capture.Reset();
+    diffusion_capture.Reset();
+    input_cutoff_capture.Reset();
+    tank_cutoff_capture.Reset();
+    mod_speed_capture.Reset();
+    mod_depth_capture.Reset();
+    mod_shape_capture.Reset();
+
     pedal_mode = PEDAL_MODE_NORMAL;
   } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
     // Only save the settings if the RIGHT footswitch is pressed in mono-stereo
@@ -495,6 +524,16 @@ void handleDoublePress(Funbox::Switches footswitch) {
 
   if (footswitch == Funbox::FOOTSWITCH_1) {
     // Go into reverb edit mode
+    // Capture all current parameter values
+    pre_delay_capture.Capture(plate_pre_delay);
+    decay_capture.Capture(plate_decay);
+    diffusion_capture.Capture(plate_tank_diffusion);
+    input_cutoff_capture.Capture(plate_input_damp_high);
+    tank_cutoff_capture.Capture(plate_tank_damp_high);
+    mod_speed_capture.Capture(plate_tank_mod_speed);
+    mod_depth_capture.Capture(plate_tank_mod_depth);
+    mod_shape_capture.Capture(plate_tank_mod_shape);
+
     bypass_verb = false; // Make sure that reverb is ON
     pedal_mode = PEDAL_MODE_EDIT_REVERB;
   } else if (footswitch == Funbox::FOOTSWITCH_2) {
@@ -645,29 +684,18 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         break;
     }
   } else if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
-    // Edit mode
+    // Edit mode with parameter capture
     plate_dry = 1.0; // Always use dry 100% in edit mode
-    plate_pre_delay = p_knob_2.Process() * 0.25;
-    plate_decay = p_knob_3.Process();        
-    plate_tank_diffusion = p_knob_4.Process();
-    plate_input_damp_high = p_knob_5.Process() * 10.0; // Dattorro takes values for this between 0 and 10
-    plate_tank_damp_high = p_knob_6.Process() * 10.0; // Dattorro takes values for this between 0 and 10
 
-    //
-    // Read in all of the toggle switch values
-    //
-
-    // Switch 1 - Tank Mod Speed
-    static const float tank_mod_speed_values[] = {0.5f, 0.25f, 0.1f};
-    plate_tank_mod_speed = tank_mod_speed_values[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)];
-
-    // Switch 2 - Tank Mod Depth
-    static const float tank_mod_depth_values[] = {0.5f, 0.25f, 0.1f};
-    plate_tank_mod_depth = tank_mod_depth_values[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_2)];
-
-    // Switch 3 - Tank Mod Shape
-    static const float tank_mod_shape_values[] = {0.5f, 0.25f, 0.1f};
-    plate_tank_mod_shape = tank_mod_shape_values[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)];
+    // Use capture objects - they return parameter values (frozen until controls move past threshold)
+    plate_pre_delay = pre_delay_capture.Process();
+    plate_decay = decay_capture.Process();
+    plate_tank_diffusion = diffusion_capture.Process();
+    plate_input_damp_high = input_cutoff_capture.Process();
+    plate_tank_damp_high = tank_cutoff_capture.Process();
+    plate_tank_mod_speed = mod_speed_capture.Process();
+    plate_tank_mod_depth = mod_depth_capture.Process();
+    plate_tank_mod_shape = mod_shape_capture.Process();
 
     verb.setDecay(plate_decay);
     verb.setTankDiffusion(plate_tank_diffusion);
