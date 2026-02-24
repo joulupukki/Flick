@@ -20,7 +20,6 @@
 
 #include "daisy.h"
 #include "daisy_hardware.h"
-#include <cmath>
 
 namespace flick {
 
@@ -46,8 +45,7 @@ public:
    * @param knob Reference to the Parameter object representing the knob
    * @param threshold Movement threshold (0.0-1.0) required to activate, default 0.05
    */
-  explicit KnobCapture(daisy::Parameter& knob, float threshold = 0.05f)
-      : knob_(knob), captured_knob_value_(0.0f), frozen_value_(0.0f), is_frozen_(false), threshold_(threshold) {}
+  explicit KnobCapture(daisy::Parameter& knob, float threshold = 0.05f);
 
   /**
    * @brief Freezes the current parameter value and records knob position.
@@ -57,11 +55,7 @@ public:
    * to Process() will return the frozen value until the knob moves beyond
    * the threshold.
    */
-  void Capture(float frozen_value) {
-    captured_knob_value_ = knob_.Process();
-    frozen_value_ = frozen_value;
-    is_frozen_ = true;
-  }
+  void Capture(float frozen_value);
 
   /**
    * @brief Returns the appropriate knob value based on capture state.
@@ -75,33 +69,14 @@ public:
    *
    * @return Raw knob value or frozen value
    */
-  float Process() {
-    float current_knob_value = knob_.Process();
-
-    if (!is_frozen_) {
-      // Pass-through mode (normal operation or already activated)
-      return current_knob_value;
-    }
-
-    // Capture mode - check for movement
-    if (std::fabs(current_knob_value - captured_knob_value_) >= threshold_) {
-      // Threshold exceeded, activate and return current value
-      is_frozen_ = false;
-      return current_knob_value;
-    }
-
-    // Still frozen, return the frozen parameter value
-    return frozen_value_;
-  }
+  float Process();
 
   /**
    * @brief Resets to pass-through mode.
    *
    * Call this when exiting an edit mode to restore normal operation.
    */
-  void Reset() {
-    is_frozen_ = false;
-  }
+  void Reset();
 
 private:
   daisy::Parameter& knob_;    ///< Reference to the knob's Parameter object
@@ -131,17 +106,12 @@ public:
    * @param hw Reference to the Funbox hardware object
    * @param switch_idx The toggle switch identifier (TOGGLESWITCH_1/2/3)
    */
-  SwitchCapture(Funbox& hw, Funbox::Toggleswitch switch_idx)
-      : hw_(hw), switch_idx_(switch_idx), captured_switch_value_(0), frozen_value_(0), is_frozen_(false) {}
+  SwitchCapture(Funbox& hw, Funbox::Toggleswitch switch_idx);
 
   /**
    * @brief Freezes the current parameter value and records switch position.
    */
-  void Capture(int frozen_value) {
-    captured_switch_value_ = hw_.GetToggleswitchPosition(switch_idx_);
-    frozen_value_ = frozen_value;
-    is_frozen_ = true;
-  }
+  void Capture(int frozen_value);
 
   /**
    * @brief Returns the appropriate parameter value based on capture state.
@@ -152,30 +122,12 @@ public:
    *
    * @return Parameter value (either frozen or looked up from current position)
    */
-  int Process() {
-    int current_value = hw_.GetToggleswitchPosition(switch_idx_);
-
-    if (!is_frozen_) {
-      return current_value;
-    }
-
-    // Capture mode - check for movement
-    if (current_value != captured_switch_value_) {
-      // Switch moved, activate and return new value
-      is_frozen_ = false;
-      return current_value;
-    }
-
-    // Still frozen
-    return frozen_value_;
-  }
+  int Process();
 
   /**
    * @brief Resets to pass-through mode.
    */
-  void Reset() {
-    is_frozen_ = false;
-  }
+  void Reset();
 
 private:
   Funbox& hw_;                      ///< Reference to hardware object

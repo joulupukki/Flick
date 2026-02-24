@@ -7,7 +7,7 @@ PLATFORM ?= funbox
 #USE_DAISYSP_LGPL=1
 
 # Base sources (common to all platforms)
-CPP_SOURCES = flick.cpp flick_oscillator.cpp hall_reverb.cpp spring_reverb.cpp daisy_hardware.cpp
+CPP_SOURCES = flick.cpp flick_oscillator.cpp hall_reverb.cpp spring_reverb.cpp daisy_hardware.cpp parameter_capture.cpp
 
 # Base includes
 C_INCLUDES = -I.. -I./PlateauNEVersio

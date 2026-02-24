@@ -46,7 +46,7 @@ using daisysp::fonepole;
 
 /// Increment this when changing the settings struct so the software will know
 /// to reset to defaults if this ever changes.
-#define SETTINGS_VERSION 5
+#define SETTINGS_VERSION 6
 
 Funbox hw;
 
@@ -124,9 +124,9 @@ struct Settings {
   float diffusion;
   float input_cutoff_freq;
   float tank_cutoff_freq;
-  float tank_mod_speed;
-  float tank_mod_depth;
-  float tank_mod_shape;
+  int tank_mod_speed;    // Switch position (0, 1, or 2)
+  int tank_mod_depth;    // Switch position (0, 1, or 2)
+  int tank_mod_shape;    // Switch position (0, 1, or 2)
   float pre_delay;
   int mono_stereo_mode;
   bool bypass_reverb;
@@ -314,23 +314,23 @@ float plate_input_damp_high = 7.25 / PLATE_DAMP_SCALE; // 7.25 is approx 3000Hz
 float plate_tank_damp_low = 2.87 / PLATE_DAMP_SCALE;   // approx 100Hz
 float plate_tank_damp_high = 7.25 / PLATE_DAMP_SCALE;  // 7.25 is approx 3520Hz
 
-float plate_tank_mod_speed = 0.1;
-float plate_tank_mod_depth = 0.1;
-float plate_tank_mod_shape = 0.25;
+// Switch positions (0, 1, or 2) for tank modulation parameters
+int plate_tank_mod_speed = 2;  // Position 2 = 0.1 (from PLATE_TANK_MOD_SPEED_VALUES)
+int plate_tank_mod_depth = 2;  // Position 2 = 0.1 (from PLATE_TANK_MOD_DEPTH_VALUES)
+int plate_tank_mod_shape = 1;  // Position 1 = 0.25 (from PLATE_TANK_MOD_SHAPE_VALUES)
 
 /**
- * @brief Updates the Dattorro plate reverb parameters based on the current global variables. 
+ * @brief Updates the Dattorro plate reverb parameters based on the current global variables.
  */
 void updatePlateReverbParameters() {
   verb.setDecay(plate_decay);
   verb.setTankDiffusion(plate_tank_diffusion);
   verb.setInputFilterHighCutoffPitch(plate_input_damp_high * PLATE_DAMP_SCALE);
   verb.setTankFilterHighCutFrequency(plate_tank_damp_high * PLATE_DAMP_SCALE);
-  verb.setTankModSpeed(plate_tank_mod_speed * PLATE_TANK_MOD_SPEED_SCALE);
-  verb.setTankModDepth(plate_tank_mod_depth * PLATE_TANK_MOD_DEPTH_SCALE);
-  verb.setTankModShape(plate_tank_mod_shape);
+  verb.setTankModSpeed(PLATE_TANK_MOD_SPEED_VALUES[plate_tank_mod_speed] * PLATE_TANK_MOD_SPEED_SCALE);
+  verb.setTankModDepth(PLATE_TANK_MOD_DEPTH_VALUES[plate_tank_mod_depth] * PLATE_TANK_MOD_DEPTH_SCALE);
+  verb.setTankModShape(PLATE_TANK_MOD_SHAPE_VALUES[plate_tank_mod_shape]);
   verb.setPreDelay(plate_pre_delay * PLATE_PRE_DELAY_SCALE);
-  verb.setTimeScale(plate_time_scale);
 }
 
 const float minus_18db_gain = 0.12589254;
@@ -701,9 +701,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     plate_tank_diffusion = p_knob_4_capture.Process();
     plate_input_damp_high = p_knob_5_capture.Process();
     plate_tank_damp_high = p_knob_6_capture.Process();
-    plate_tank_mod_speed = PLATE_TANK_MOD_SPEED_VALUES[p_sw1_capture.Process()];
-    plate_tank_mod_depth = PLATE_TANK_MOD_DEPTH_VALUES[p_sw2_capture.Process()];
-    plate_tank_mod_shape = PLATE_TANK_MOD_SHAPE_VALUES[p_sw3_capture.Process()];
+    plate_tank_mod_speed = p_sw1_capture.Process();
+    plate_tank_mod_depth = p_sw2_capture.Process();
+    plate_tank_mod_shape = p_sw3_capture.Process();
 
     updatePlateReverbParameters();
 
@@ -943,7 +943,10 @@ int main() {
   hold = 1.;
 
   verb.setSampleRate(48000);
+  verb.setTimeScale(plate_time_scale);
   verb.enableInputDiffusion(plate_diffusion_enabled);
+  verb.setInputFilterLowCutoffPitch(plate_input_damp_low * PLATE_DAMP_SCALE);
+  verb.setTankFilterLowCutFrequency(plate_tank_damp_low * PLATE_DAMP_SCALE);
   
   updatePlateReverbParameters();
 
