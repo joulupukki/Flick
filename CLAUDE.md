@@ -133,9 +133,11 @@ Three tremolo modes via Toggle Switch 2:
 [flick.cpp](src/flick.cpp:164-180)
 
 Simple digital delay with:
-- Delay time: 50ms to 2 seconds (logarithmic)
+- Delay time: 50ms to 2 seconds (logarithmic), multiplied by timing subdivision
+- Timing subdivision via Toggle Switch 3: Triplet (×0.6667), Quarter/straight (×1.0), Dotted Eighth (×0.75)
 - Feedback: 0-100%
 - Dry/wet mix: 0-100%
+- Makeup gain: automatically engaged (×1.66 for delay, ×1.2 for tremolo) when delay or tremolo is active
 - Stored in SDRAM
 - Stereo independent processing
 
@@ -296,7 +298,7 @@ make PLATFORM=hothouse
 | Knob 6  | Delay amount | Tank cut | - |
 | Switch 1 | Reverb mode | Mod speed | - |
 | Switch 2 | Trem type | Mod depth | - |
-| Switch 3 | Makeup gain | Mod shape | Mono/Stereo |
+| Switch 3 | Delay timing | Mod shape | Mono/Stereo |
 | FSW 1 Single | Reverb on/off | Cancel | Cancel |
 | FSW 1 Long | Enter reverb edit | - | - |
 | FSW 2 Single | Tremolo on/off | Save | Save |
