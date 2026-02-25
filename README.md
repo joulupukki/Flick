@@ -26,7 +26,7 @@ Feature demo video (28 June 2025):
 | KNOB 4 | Delay Time |  |
 | KNOB 5 | Delay Feedback |  |
 | KNOB 6 | Delay Dry/Wet Amount |  |
-| SWITCH 1 | Reverb knob funcion | **LOW** - 100% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 0% Dry, 0-100% Wet |
+| SWITCH 1 | Reverb Type | **LOW** - Hall<br/>**MID** - Plate<br/>**HIGH** - Spring |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
 | SWITCH 3 | Delay Timing | **LOW** - Triplet (2/3)<br/>**MID** - Quarter (straight)<br/>**HIGH** - Dotted Eighth (3/4) |
 | FOOTSWITCH 1 | Reverb On/Off | Normal press toggles reverb on/off.<br/>Long press toggles reverb edit mode (see below). |
@@ -51,14 +51,16 @@ Feature demo video (28 June 2025):
 | FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Reverb Edit Mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Reverb Edit Mode. |
 
-### Controls (Mono-Stereo Edit Mode)
-*Both LEDs flash alternatively when in Mono-Stereo Edit mode.*
+### Controls (Settings Edit Mode)
+*Both LEDs flash alternatively when in Settings Edit mode.*
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
+| SWITCH 1 | Reverb Knob Function | **LOW** - 0% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 100% Dry, 0-100% Wet |
+| SWITCH 2 | Polarity | **LOW** - Invert Right<br/>**MID** - Normal<br/>**HIGH** - Invert Left |
 | SWITCH 3 | Mono-Stereo Mode | **LOW** - Mono in, Mono Out<br/>**MID** - Mono in, Stereo Out<br/>**HIGH** - Stereo In, Stereo Out |
-| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Mono-Stereo Edit Mode. |
-| FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Mono-Stereo Edit Mode. |
+| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Settings Edit Mode. |
+| FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Settings Edit Mode. |
 
 ### Factory Reset (Restore default reverb parameters)
 

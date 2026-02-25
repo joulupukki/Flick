@@ -67,7 +67,7 @@ The audio callback processes samples in this order:
 
 #### 1. Reverb System
 
-Three reverb algorithms selectable via DIP switches (Funbox only) or compile-time default:
+Three reverb algorithms selectable via Toggle Switch 1 in normal mode:
 
 **Plate Reverb** (Dattorro Algorithm)
 - Source: [PlateauNEVersio/Dattorro.cpp](src/PlateauNEVersio/Dattorro.cpp)
@@ -199,10 +199,18 @@ Simple digital delay with:
 - Footswitch 1: Cancel (restore previous)
 - Footswitch 2: Save to flash
 
-**Mono-Stereo Edit Mode** (`PEDAL_MODE_EDIT_MONO_STEREO`)
+**Settings Edit Mode** (`PEDAL_MODE_EDIT_MONO_STEREO`)
 - Activated by long-press of Footswitch 2
 - LEDs flash alternately
-- Toggle Switch 3 selects mode:
+- Toggle Switch 1 selects reverb wet/dry mode:
+  - RIGHT/UP: All Dry (100% dry, 0-100% wet)
+  - MIDDLE: Dry/Wet Mix
+  - LEFT/DOWN: All Wet (0% dry, 0-100% wet)
+- Toggle Switch 2 selects polarity:
+  - RIGHT/UP: Invert Left channel
+  - MIDDLE: Normal (no inversion)
+  - LEFT/DOWN: Invert Right channel
+- Toggle Switch 3 selects mono/stereo mode:
   - LEFT: Mono In, Mono Out (MIMO)
   - MIDDLE: Mono In, Stereo Out (MISO)
   - RIGHT: Stereo In, Stereo Out (SISO)
@@ -222,11 +230,13 @@ struct Settings {
   float diffusion;          // Tank diffusion
   float input_cutoff_freq;  // Input high-cut
   float tank_cutoff_freq;   // Tank high-cut
-  float tank_mod_speed;     // LFO speed
-  float tank_mod_depth;     // LFO depth
-  float tank_mod_shape;     // LFO shape
+  int tank_mod_speed_pos;   // LFO speed switch position
+  int tank_mod_depth_pos;   // LFO depth switch position
+  int tank_mod_shape_pos;   // LFO shape switch position
   float pre_delay;          // Pre-delay amount
   int mono_stereo_mode;     // I/O routing mode
+  int polarity_mode;        // Phase inversion mode
+  int reverb_knob_mode;     // Reverb wet/dry knob behavior
   bool bypass_reverb;       // Reverb bypass state
   bool bypass_tremolo;      // Tremolo bypass state
   bool bypass_delay;        // Delay bypass state
@@ -288,22 +298,22 @@ make PLATFORM=hothouse
 
 **Control Mapping:**
 
-| Control | Normal Mode | Reverb Edit | Mono-Stereo Edit |
-|---------|-------------|-------------|------------------|
+| Control | Normal Mode | Reverb Edit | Settings Edit |
+|---------|-------------|-------------|---------------|
 | Knob 1  | Reverb amount | Reverb amount | - |
 | Knob 2  | Trem speed | Pre-delay | - |
 | Knob 3  | Trem depth | Decay | - |
 | Knob 4  | Delay time | Diffusion | - |
 | Knob 5  | Delay feedback | Input cut | - |
 | Knob 6  | Delay amount | Tank cut | - |
-| Switch 1 | Reverb mode | Mod speed | - |
-| Switch 2 | Trem type | Mod depth | - |
+| Switch 1 | Reverb type | Mod speed | Reverb wet/dry |
+| Switch 2 | Trem type | Mod depth | Polarity |
 | Switch 3 | Delay timing | Mod shape | Mono/Stereo |
 | FSW 1 Single | Reverb on/off | Cancel | Cancel |
 | FSW 1 Long | Enter reverb edit | - | - |
 | FSW 2 Single | Tremolo on/off | Save | Save |
 | FSW 2 Double | Delay on/off | - | - |
-| FSW 2 Long | Enter mono-stereo edit | - | - |
+| FSW 2 Long | Enter settings edit | - | - |
 | Both FSW Long | DFU mode | - | - |
 
 **LED Indicators:**
@@ -319,8 +329,8 @@ make PLATFORM=hothouse
 
 Platform-specific via preprocessor:
 - Switch positions read differently
-- Funbox has DIP switches for reverb type selection
 - Logical position mapping unifies both platforms
+- Reverb type is selected via Toggle Switch 1 on both platforms (DIP switches no longer used)
 
 ### Switch Orientation
 
@@ -358,7 +368,7 @@ TREMOLO_SPEED_MIN = 0.2 Hz
 TREMOLO_SPEED_MAX = 16.0 Hz
 PLATE_TANK_MOD_SPEED_SCALE = 8.0f   // Dattorro reverb speed scaling
 PLATE_TANK_MOD_DEPTH_SCALE = 15.0f  // Dattorro reverb depth scaling
-SETTINGS_VERSION = 4  // Increment on Settings struct change
+SETTINGS_VERSION = 7  // Increment on Settings struct change
 ```
 
 ## Development Notes

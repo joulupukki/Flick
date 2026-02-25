@@ -46,7 +46,7 @@ using daisysp::fonepole;
 
 /// Increment this when changing the settings struct so the software will know
 /// to reset to defaults if this ever changes.
-#define SETTINGS_VERSION 6
+#define SETTINGS_VERSION 7
 
 Funbox hw;
 
@@ -129,6 +129,8 @@ struct Settings {
   int tank_mod_shape_pos;    // Switch position (0, 1, or 2)
   float pre_delay;
   int mono_stereo_mode;
+  int polarity_mode;
+  int reverb_knob_mode;
   bool bypass_reverb;
   bool bypass_tremolo;
   bool bypass_delay;
@@ -147,6 +149,8 @@ struct Settings {
       a.tank_mod_shape_pos == tank_mod_shape_pos &&
       a.pre_delay == pre_delay &&
       a.mono_stereo_mode == mono_stereo_mode &&
+      a.polarity_mode == polarity_mode &&
+      a.reverb_knob_mode == reverb_knob_mode &&
       a.bypass_reverb == bypass_reverb &&
       a.bypass_tremolo == bypass_tremolo &&
       a.bypass_delay == bypass_delay
@@ -224,9 +228,9 @@ enum TremoloMode {
 
 // Toggle switch mappings (orientation: Hothouse vertical UP/DOWN, Funbox horizontal LEFT/RIGHT)
 constexpr ReverbKnobMode kReverbKnobMap[] = {
-  REVERB_KNOB_ALL_WET,                        // UP (Hothouse) / RIGHT (Funbox)
-  REVERB_KNOB_DRY_WET_MIX,                    // MIDDLE
-  REVERB_KNOB_ALL_DRY,                        // DOWN (Hothouse) / LEFT (Funbox)
+  REVERB_KNOB_ALL_DRY,                         // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_KNOB_DRY_WET_MIX,                     // MIDDLE
+  REVERB_KNOB_ALL_WET,                          // DOWN (Hothouse) / LEFT (Funbox)
 };
 
 constexpr TremoloMode kTremoloModeMap[] = {
@@ -252,6 +256,27 @@ constexpr float kDelayTimingMultiplier[] = {
   0.6667f,  // DELAY_TIMING_TRIPLET
   1.0f,     // DELAY_TIMING_QUARTER
 };
+
+enum PolarityMode {
+  POLARITY_NORMAL,
+  POLARITY_INVERT_LEFT,
+  POLARITY_INVERT_RIGHT,
+};
+
+constexpr PolarityMode kPolarityMap[] = {
+  POLARITY_INVERT_LEFT,    // UP (Hothouse) / RIGHT (Funbox)
+  POLARITY_NORMAL,         // MIDDLE
+  POLARITY_INVERT_RIGHT,   // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+constexpr ReverbType kReverbTypeMap[] = {
+  REVERB_SPRING,   // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_PLATE,    // MIDDLE
+  REVERB_HALL,     // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+PolarityMode polarity_mode = POLARITY_NORMAL;
+ReverbKnobMode reverb_knob_mode = REVERB_KNOB_DRY_WET_MIX;
 
 Delay delayL;
 Delay delayR;
@@ -416,6 +441,8 @@ void loadSettings() {
   plate_tank_mod_shape_pos = local_settings.tank_mod_shape_pos;
   plate_pre_delay = local_settings.pre_delay;
   mono_stereo_mode = static_cast<MonoStereoMode>(local_settings.mono_stereo_mode);
+  polarity_mode = static_cast<PolarityMode>(local_settings.polarity_mode);
+  reverb_knob_mode = static_cast<ReverbKnobMode>(local_settings.reverb_knob_mode);
   updateReverbScales(mono_stereo_mode);
 
   bypass_verb = local_settings.bypass_reverb;
@@ -446,6 +473,8 @@ void saveMonoStereoSettings() {
   Settings &LocalSettings = SavedSettings.GetSettings();
 
   LocalSettings.mono_stereo_mode = mono_stereo_mode;
+  LocalSettings.polarity_mode = polarity_mode;
+  LocalSettings.reverb_knob_mode = reverb_knob_mode;
 
   trigger_settings_save = true;
 }
@@ -481,6 +510,8 @@ void restoreMonoStereoSettings() {
   Settings &local_settings = SavedSettings.GetSettings();
 
   mono_stereo_mode = static_cast<MonoStereoMode>(local_settings.mono_stereo_mode);
+  polarity_mode = static_cast<PolarityMode>(local_settings.polarity_mode);
+  reverb_knob_mode = static_cast<ReverbKnobMode>(local_settings.reverb_knob_mode);
   updateReverbScales(mono_stereo_mode);
 }
 
@@ -609,25 +640,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   static float trem_val;
   hw.ProcessAllControls();
 
-  // Read DIP switches to determine reverb type (runtime update)
-#if defined(PLATFORM_funbox)
-  {
-    bool dip1 = hw.switches[Funbox::DIP_SWITCH_1].RawState();
-    bool dip2 = hw.switches[Funbox::DIP_SWITCH_2].RawState();
-    if (!dip1 && !dip2) {
-      current_reverb_type = REVERB_PLATE;
-    } else if (!dip1 && dip2) {
-      current_reverb_type = REVERB_SPRING;
-    } else if (dip1 && !dip2) {
-      current_reverb_type = REVERB_HALL;
-    } else {
-      current_reverb_type = REVERB_PLATE; // Default for both on
-    }
-  }
-#else
-  current_reverb_type = REVERB_PLATE;
-#endif
-
   if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
     // Edit mode
 
@@ -678,6 +690,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   TremDelMakeUpGain makeup_gain = (!bypass_delay || !bypass_trem) ? MAKEUP_GAIN_NORMAL : MAKEUP_GAIN_NONE;
 
   if (pedal_mode == PEDAL_MODE_NORMAL) {
+    // Reverb type from SW1
+    current_reverb_type = kReverbTypeMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)];
+
     osc.SetFreq(p_trem_speed.Process());
     static float depth = 0;
     depth = daisysp::fclamp(p_trem_depth.Process(), 0.f, 1.f);
@@ -708,8 +723,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     delayL.feedback = delayR.feedback = p_delay_feedback.Process();
     delay_drywet = (int)p_delay_amt.Process();
 
-    // Reverb dry/wet mode
-    switch (kReverbKnobMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)]) {
+    // Reverb dry/wet mode (from saved setting)
+    switch (reverb_knob_mode) {
       case REVERB_KNOB_ALL_DRY:
         plate_dry = 1.0;
         break;
@@ -737,8 +752,15 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     updatePlateReverbParameters();
 
   } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Mono-Stereo edit mode
-    // Read in the mono-stereo mode from toggle switch 3
+    // Settings edit mode
+
+    // SW1: Reverb wet/dry mode
+    reverb_knob_mode = kReverbKnobMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)];
+
+    // SW2: Polarity mode
+    polarity_mode = kPolarityMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_2)];
+
+    // SW3: Mono/stereo mode
     switch (hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)) {
       case Funbox::TOGGLESWITCH_MIDDLE:
         mono_stereo_mode = MS_MODE_MISO; // Mono In, Stereo Out
@@ -751,6 +773,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
     updateReverbScales(mono_stereo_mode);
   }
+
+  float polarity_L = (polarity_mode == POLARITY_INVERT_LEFT) ? -1.0f : 1.0f;
+  float polarity_R = (polarity_mode == POLARITY_INVERT_RIGHT) ? -1.0f : 1.0f;
 
   for (size_t i = 0; i < size; ++i) {
     float dry_L = in[0][i];
@@ -888,12 +913,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     if (mono_stereo_mode == MS_MODE_MIMO) {
-      out[0][i] = (s_L * 0.5) + (s_R * 0.5); // Sum the processed left and right channels
-      out[1][i] = 0.0f; // Mute the unused channel
+      out[0][i] = ((s_L * 0.5) + (s_R * 0.5)) * polarity_L;
+      out[1][i] = 0.0f;
     } else {
-      // Send stereo output in MISO and SISO
-      out[0][i] = s_L;
-      out[1][i] = s_R;
+      out[0][i] = s_L * polarity_L;
+      out[1][i] = s_R * polarity_R;
     }
   }
 }
@@ -1000,6 +1024,8 @@ int main() {
     plate_tank_mod_shape_pos, // tank_mod_shape_pos
     plate_pre_delay, // pre_delay
     MS_MODE_MIMO, // mono_stereo_mode
+    POLARITY_NORMAL, // polarity_mode
+    REVERB_KNOB_DRY_WET_MIX, // reverb_knob_mode
     true,         // bypass_reverb
     true,         // bypass_tremolo
     true,         // bypass_delay
