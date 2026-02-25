@@ -213,7 +213,6 @@ enum ReverbKnobMode {
 enum TremDelMakeUpGain {
   MAKEUP_GAIN_NONE,
   MAKEUP_GAIN_NORMAL,
-  MAKEUP_GAIN_HEAVY,
 };
 
 enum TremoloMode {
@@ -230,16 +229,28 @@ constexpr ReverbKnobMode kReverbKnobMap[] = {
   REVERB_KNOB_ALL_DRY,                        // DOWN (Hothouse) / LEFT (Funbox)
 };
 
-constexpr TremDelMakeUpGain kMakeupGainMap[] = {
-  MAKEUP_GAIN_HEAVY,                       // UP (Hothouse) / RIGHT (Funbox)
-  MAKEUP_GAIN_NORMAL,                      // MIDDLE
-  MAKEUP_GAIN_NONE,                        // DOWN (Hothouse) / LEFT (Funbox)
-};
-
 constexpr TremoloMode kTremoloModeMap[] = {
     TREMOLO_SQUARE,     // UP (Hothouse) / RIGHT (Funbox)
     TREMOLO_HARMONIC,   // MIDDLE
     TREMOLO_SINE,       // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+enum DelayTimingMode {
+  DELAY_TIMING_DOTTED_EIGHTH,   // 3/4 of knob value
+  DELAY_TIMING_TRIPLET,         // 2/3 of knob value
+  DELAY_TIMING_QUARTER,         // 1x knob value (straight)
+};
+
+constexpr DelayTimingMode kDelayTimingMap[] = {
+  DELAY_TIMING_DOTTED_EIGHTH,   // UP (Hothouse) / RIGHT (Funbox)
+  DELAY_TIMING_QUARTER,         // MIDDLE
+  DELAY_TIMING_TRIPLET,         // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+constexpr float kDelayTimingMultiplier[] = {
+  0.75f,    // DELAY_TIMING_DOTTED_EIGHTH
+  0.6667f,  // DELAY_TIMING_TRIPLET
+  1.0f,     // DELAY_TIMING_QUARTER
 };
 
 Delay delayL;
@@ -664,7 +675,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
   plate_wet = p_verb_amt.Process();
 
-  TremDelMakeUpGain makeup_gain = kMakeupGainMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)];
+  TremDelMakeUpGain makeup_gain = (!bypass_delay || !bypass_trem) ? MAKEUP_GAIN_NORMAL : MAKEUP_GAIN_NONE;
 
   if (pedal_mode == PEDAL_MODE_NORMAL) {
     osc.SetFreq(p_trem_speed.Process());
@@ -691,7 +702,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     //
     // Delay
     //
-    delayL.delay_target = delayR.delay_target =  p_delay_time.Process();
+    DelayTimingMode delay_timing = kDelayTimingMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)];
+    float delay_time_raw = p_delay_time.Process();
+    delayL.delay_target = delayR.delay_target = delay_time_raw * kDelayTimingMultiplier[delay_timing];
     delayL.feedback = delayR.feedback = p_delay_feedback.Process();
     delay_drywet = (int)p_delay_amt.Process();
 
@@ -769,7 +782,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       mixL += sigL;
       mixR += sigR;
 
-      float delay_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : makeup_gain == MAKEUP_GAIN_NORMAL ? 1.66f : 2.0f;
+      float delay_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.66f;
 
       // apply drywet and attenuate
       s_L = fdrywet * mixL * 0.333f + (1.0f - fdrywet) * s_L * delay_make_up_gain;
@@ -785,7 +798,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       // trem_val gets used above for pulsing LED
       float lfoSample = osc.Process();
       trem_val = dc_offset + lfoSample;
-      float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : makeup_gain == MAKEUP_GAIN_NORMAL ? 1.2f : 1.6f;
+      float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.2f;
 
       // Apply tremolo based on mode
       if (tremMode == TREMOLO_HARMONIC) {

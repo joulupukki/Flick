@@ -28,7 +28,7 @@ Feature demo video (28 June 2025):
 | KNOB 6 | Delay Dry/Wet Amount |  |
 | SWITCH 1 | Reverb knob funcion | **LOW** - 100% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 0% Dry, 0-100% Wet |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
-| SWITCH 3 | Trem & Delay Makeup Gain | **LOW** - None<br/>**MID** - Normal<br/>**HIGH** - Plus |
+| SWITCH 3 | Delay Timing | **LOW** - Triplet (2/3)<br/>**MID** - Quarter (straight)<br/>**HIGH** - Dotted Eighth (3/4) |
 | FOOTSWITCH 1 | Reverb On/Off | Normal press toggles reverb on/off.<br/>Long press toggles reverb edit mode (see below). |
 | FOOTSWITCH 2 | Tremolo/Delay On/Off | Normal press toggles tremolo.<br/>Double press toggles delay.<br/><br/>**LED:**<br/>- 100% when only delay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Mono-Stereo Edit mode (see below). |
 
