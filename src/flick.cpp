@@ -259,8 +259,8 @@ constexpr TremoloMode kTremoloModeMap[] = {
 
 enum DelayTimingMode {
   DELAY_TIMING_DOTTED_EIGHTH,   // 3/4 of knob value
-  DELAY_TIMING_TRIPLET,         // 1/3 of knob value (3 echoes per beat)
   DELAY_TIMING_QUARTER,         // 1x knob value (straight)
+  DELAY_TIMING_TRIPLET,         // 1/3 of knob value (3 echoes per beat)
 };
 
 constexpr DelayTimingMode kDelayTimingMap[] = {
