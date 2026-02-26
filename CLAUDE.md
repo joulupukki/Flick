@@ -178,7 +178,7 @@ Simple digital delay with:
   - Footswitch 2 (Right):
     - Single press: Toggle tremolo on/off
     - Double press: Toggle delay on/off
-    - Long press: Enter mono-stereo edit mode
+    - Long press: Enter device settings
   - Both footswitches:
     - Simultaneous long press: Enter DFU (bootloader) mode
 
@@ -199,7 +199,7 @@ Simple digital delay with:
 - Footswitch 1: Cancel (restore previous)
 - Footswitch 2: Save to flash
 
-**Settings Edit Mode** (`PEDAL_MODE_EDIT_MONO_STEREO`)
+**Device Settings** (`PEDAL_MODE_EDIT_DEVICE_SETTINGS`)
 - Activated by long-press of Footswitch 2
 - LEDs flash alternately
 - Toggle Switch 1 selects reverb wet/dry mode:

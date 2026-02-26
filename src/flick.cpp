@@ -101,7 +101,7 @@ constexpr float HARMONIC_TREM_EQ_LOW_SHELF_Q = 1.0f; // Shelf slope
 enum PedalMode {
   PEDAL_MODE_NORMAL,
   PEDAL_MODE_EDIT_REVERB,     // Edit mode activated by double-press of the left foot switch
-  PEDAL_MODE_EDIT_MONO_STEREO // Edit mode activated by long-press of the right foot switch
+  PEDAL_MODE_EDIT_DEVICE_SETTINGS // Edit mode activated by long-press of the right foot switch
 };
 
 enum MonoStereoMode {                       // Controlled by Toggle Switch 3
@@ -274,6 +274,22 @@ constexpr ReverbType kReverbTypeMap[] = {
   REVERB_PLATE,    // MIDDLE
   REVERB_HALL,     // DOWN (Hothouse) / LEFT (Funbox)
 };
+
+constexpr MonoStereoMode kMonoStereoMap[] = {
+  MS_MODE_SISO,    // UP (Hothouse) / RIGHT (Funbox)
+  MS_MODE_MISO,    // MIDDLE
+  MS_MODE_MIMO,    // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+/// @brief Reverse-lookup: find the switch position (0/1/2) for a given value
+/// in a 3-element mapping array.
+template<typename T>
+int switchPosForValue(const T (&map)[3], T value) {
+  for (int i = 0; i < 3; i++) {
+    if (map[i] == value) return i;
+  }
+  return 1; // default to MIDDLE
+}
 
 PolarityMode polarity_mode = POLARITY_NORMAL;
 ReverbKnobMode reverb_knob_mode = REVERB_KNOB_DRY_WET_MIX;
@@ -469,7 +485,7 @@ void saveSettings() {
 	trigger_settings_save = true;
 }
 
-void saveMonoStereoSettings() {
+void saveDeviceSettings() {
   Settings &LocalSettings = SavedSettings.GetSettings();
 
   LocalSettings.mono_stereo_mode = mono_stereo_mode;
@@ -505,8 +521,8 @@ void restoreReverbSettings() {
   updatePlateReverbParameters();
 }
 
-/// @brief Restore the mono-stereo settings from the saved settings.
-void restoreMonoStereoSettings() {
+/// @brief Restore the device settings from the saved settings.
+void restoreDeviceSettings() {
   Settings &local_settings = SavedSettings.GetSettings();
 
   mono_stereo_mode = static_cast<MonoStereoMode>(local_settings.mono_stereo_mode);
@@ -536,17 +552,22 @@ void handleNormalPress(Funbox::Switches footswitch) {
     p_sw3_capture.Reset();
 
     pedal_mode = PEDAL_MODE_NORMAL;
-  } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Only save the settings if the RIGHT footswitch is pressed in mono-stereo
-    // edit mode. The LEFT footswitch is used to exit mono-stereo edit mode
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Only save the settings if the RIGHT footswitch is pressed in device
+    // settings mode. The LEFT footswitch is used to exit device settings mode
     // without saving.
     if (footswitch == Funbox::FOOTSWITCH_2) {
-      // Save the mono-stereo settings
-      saveMonoStereoSettings();
+      // Save the device settings
+      saveDeviceSettings();
     } else {
-      // Cancel: restore mono-stereo settings AND bypass states
-      restoreMonoStereoSettings();
+      // Cancel: restore device settings AND bypass states
+      restoreDeviceSettings();
     }
+
+    // Reset all switch captures when exiting device settings mode
+    p_sw1_capture.Reset();
+    p_sw2_capture.Reset();
+    p_sw3_capture.Reset();
 
     pedal_mode = PEDAL_MODE_NORMAL;
   } else {
@@ -569,7 +590,7 @@ void handleNormalPress(Funbox::Switches footswitch) {
 
 void handleDoublePress(Funbox::Switches footswitch) {
   // Ignore double presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
     return;
   }
 
@@ -589,7 +610,7 @@ void handleDoublePress(Funbox::Switches footswitch) {
 void handleLongPress(Funbox::Switches footswitch) {
 
   // Ignore long presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
     return;
   }
 
@@ -618,8 +639,11 @@ void handleLongPress(Funbox::Switches footswitch) {
     bypass_verb = false; // Make sure that reverb is ON
     pedal_mode = PEDAL_MODE_EDIT_REVERB;
   } else if (footswitch == Funbox::FOOTSWITCH_2) {
-    // FOOTSWITCH_2 long press: Enter mono-stereo config.
-    pedal_mode = PEDAL_MODE_EDIT_MONO_STEREO;
+    // FOOTSWITCH_2 long press: Enter device settings.
+    p_sw1_capture.Capture(switchPosForValue(kReverbKnobMap, reverb_knob_mode));
+    p_sw2_capture.Capture(switchPosForValue(kPolarityMap, polarity_mode));
+    p_sw3_capture.Capture(switchPosForValue(kMonoStereoMap, mono_stereo_mode));
+    pedal_mode = PEDAL_MODE_EDIT_DEVICE_SETTINGS;
   }
 }
 
@@ -654,13 +678,13 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         led_right.Set(led_state ? 1.0f : 0.0f);
       }
     }
-  } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Mono-Stereo edit mode
-    // Blink the left & right LEDs alternately to indicate mono-stereo edit mode
-    static uint32_t mono_stereo_edit_count = 0;
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Device settings mode
+    // Blink the left & right LEDs alternately to indicate device settings mode
+    static uint32_t device_settings_edit_count = 0;
     static bool led_state = true;
-    if (++mono_stereo_edit_count >= hw.AudioCallbackRate() / 2) {
-      mono_stereo_edit_count = 0;
+    if (++device_settings_edit_count >= hw.AudioCallbackRate() / 2) {
+      device_settings_edit_count = 0;
       led_state = !led_state;
       led_left.Set(led_state ? 1.0f : 0.0f);
       led_right.Set(led_state ? 0.0f : 1.0f);
@@ -751,26 +775,17 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
     updatePlateReverbParameters();
 
-  } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Settings edit mode
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Device settings mode with switch capture (soft takeover)
 
     // SW1: Reverb wet/dry mode
-    reverb_knob_mode = kReverbKnobMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)];
+    reverb_knob_mode = kReverbKnobMap[p_sw1_capture.Process()];
 
     // SW2: Polarity mode
-    polarity_mode = kPolarityMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_2)];
+    polarity_mode = kPolarityMap[p_sw2_capture.Process()];
 
     // SW3: Mono/stereo mode
-    switch (hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)) {
-      case Funbox::TOGGLESWITCH_MIDDLE:
-        mono_stereo_mode = MS_MODE_MISO; // Mono In, Stereo Out
-        break;
-      case Funbox::TOGGLESWITCH_LEFT:
-        mono_stereo_mode = MS_MODE_MIMO; // Mono In, Mono Out
-        break;
-      default: // TOGGLESWITCH_RIGHT
-        mono_stereo_mode = MS_MODE_SISO; // Stereo In, Stereo Out
-    }
+    mono_stereo_mode = kMonoStereoMap[p_sw3_capture.Process()];
     updateReverbScales(mono_stereo_mode);
   }
 
