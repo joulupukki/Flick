@@ -282,9 +282,9 @@ enum PolarityMode {
 };
 
 constexpr PolarityMode kPolarityMap[] = {
-  POLARITY_INVERT_LEFT,    // UP (Hothouse) / RIGHT (Funbox)
+  POLARITY_INVERT_RIGHT,    // UP (Hothouse) / RIGHT (Funbox)
   POLARITY_NORMAL,         // MIDDLE
-  POLARITY_INVERT_RIGHT,   // DOWN (Hothouse) / LEFT (Funbox)
+  POLARITY_INVERT_LEFT,   // DOWN (Hothouse) / LEFT (Funbox)
 };
 
 constexpr ReverbType kReverbTypeMap[] = {
