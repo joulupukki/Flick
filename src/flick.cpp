@@ -781,6 +781,19 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     // SW1: Reverb wet/dry mode
     reverb_knob_mode = kReverbKnobMap[p_sw1_capture.Process()];
 
+    // Apply reverb dry/wet so changes are audible in settings mode
+    switch (reverb_knob_mode) {
+      case REVERB_KNOB_ALL_DRY:
+        plate_dry = 1.0;
+        break;
+      case REVERB_KNOB_DRY_WET_MIX:
+        plate_dry = 1.0 - plate_wet;
+        break;
+      case REVERB_KNOB_ALL_WET:
+        plate_dry = 0.0f;
+        break;
+    }
+
     // SW2: Polarity mode
     polarity_mode = kPolarityMap[p_sw2_capture.Process()];
 
