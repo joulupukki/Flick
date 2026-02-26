@@ -46,7 +46,7 @@ using daisysp::fonepole;
 
 /// Increment this when changing the settings struct so the software will know
 /// to reset to defaults if this ever changes.
-#define SETTINGS_VERSION 6
+#define SETTINGS_VERSION 7
 
 Funbox hw;
 
@@ -101,7 +101,7 @@ constexpr float HARMONIC_TREM_EQ_LOW_SHELF_Q = 1.0f; // Shelf slope
 enum PedalMode {
   PEDAL_MODE_NORMAL,
   PEDAL_MODE_EDIT_REVERB,     // Edit mode activated by double-press of the left foot switch
-  PEDAL_MODE_EDIT_MONO_STEREO // Edit mode activated by long-press of the right foot switch
+  PEDAL_MODE_EDIT_DEVICE_SETTINGS // Edit mode activated by long-press of the right foot switch
 };
 
 enum MonoStereoMode {                       // Controlled by Toggle Switch 3
@@ -129,6 +129,8 @@ struct Settings {
   int tank_mod_shape_pos;    // Switch position (0, 1, or 2)
   float pre_delay;
   int mono_stereo_mode;
+  int polarity_mode;
+  int reverb_knob_mode;
   bool bypass_reverb;
   bool bypass_tremolo;
   bool bypass_delay;
@@ -147,6 +149,8 @@ struct Settings {
       a.tank_mod_shape_pos == tank_mod_shape_pos &&
       a.pre_delay == pre_delay &&
       a.mono_stereo_mode == mono_stereo_mode &&
+      a.polarity_mode == polarity_mode &&
+      a.reverb_knob_mode == reverb_knob_mode &&
       a.bypass_reverb == bypass_reverb &&
       a.bypass_tremolo == bypass_tremolo &&
       a.bypass_delay == bypass_delay
@@ -224,9 +228,9 @@ enum TremoloMode {
 
 // Toggle switch mappings (orientation: Hothouse vertical UP/DOWN, Funbox horizontal LEFT/RIGHT)
 constexpr ReverbKnobMode kReverbKnobMap[] = {
-  REVERB_KNOB_ALL_WET,                        // UP (Hothouse) / RIGHT (Funbox)
-  REVERB_KNOB_DRY_WET_MIX,                    // MIDDLE
-  REVERB_KNOB_ALL_DRY,                        // DOWN (Hothouse) / LEFT (Funbox)
+  REVERB_KNOB_ALL_DRY,                         // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_KNOB_DRY_WET_MIX,                     // MIDDLE
+  REVERB_KNOB_ALL_WET,                          // DOWN (Hothouse) / LEFT (Funbox)
 };
 
 constexpr TremoloMode kTremoloModeMap[] = {
@@ -252,6 +256,43 @@ constexpr float kDelayTimingMultiplier[] = {
   0.6667f,  // DELAY_TIMING_TRIPLET
   1.0f,     // DELAY_TIMING_QUARTER
 };
+
+enum PolarityMode {
+  POLARITY_NORMAL,
+  POLARITY_INVERT_LEFT,
+  POLARITY_INVERT_RIGHT,
+};
+
+constexpr PolarityMode kPolarityMap[] = {
+  POLARITY_INVERT_LEFT,    // UP (Hothouse) / RIGHT (Funbox)
+  POLARITY_NORMAL,         // MIDDLE
+  POLARITY_INVERT_RIGHT,   // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+constexpr ReverbType kReverbTypeMap[] = {
+  REVERB_SPRING,   // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_PLATE,    // MIDDLE
+  REVERB_HALL,     // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+constexpr MonoStereoMode kMonoStereoMap[] = {
+  MS_MODE_SISO,    // UP (Hothouse) / RIGHT (Funbox)
+  MS_MODE_MISO,    // MIDDLE
+  MS_MODE_MIMO,    // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+/// @brief Reverse-lookup: find the switch position (0/1/2) for a given value
+/// in a 3-element mapping array.
+template<typename T>
+int switchPosForValue(const T (&map)[3], T value) {
+  for (int i = 0; i < 3; i++) {
+    if (map[i] == value) return i;
+  }
+  return 1; // default to MIDDLE
+}
+
+PolarityMode polarity_mode = POLARITY_NORMAL;
+ReverbKnobMode reverb_knob_mode = REVERB_KNOB_DRY_WET_MIX;
 
 Delay delayL;
 Delay delayR;
@@ -416,6 +457,8 @@ void loadSettings() {
   plate_tank_mod_shape_pos = local_settings.tank_mod_shape_pos;
   plate_pre_delay = local_settings.pre_delay;
   mono_stereo_mode = static_cast<MonoStereoMode>(local_settings.mono_stereo_mode);
+  polarity_mode = static_cast<PolarityMode>(local_settings.polarity_mode);
+  reverb_knob_mode = static_cast<ReverbKnobMode>(local_settings.reverb_knob_mode);
   updateReverbScales(mono_stereo_mode);
 
   bypass_verb = local_settings.bypass_reverb;
@@ -442,10 +485,12 @@ void saveSettings() {
 	trigger_settings_save = true;
 }
 
-void saveMonoStereoSettings() {
+void saveDeviceSettings() {
   Settings &LocalSettings = SavedSettings.GetSettings();
 
   LocalSettings.mono_stereo_mode = mono_stereo_mode;
+  LocalSettings.polarity_mode = polarity_mode;
+  LocalSettings.reverb_knob_mode = reverb_knob_mode;
 
   trigger_settings_save = true;
 }
@@ -476,11 +521,13 @@ void restoreReverbSettings() {
   updatePlateReverbParameters();
 }
 
-/// @brief Restore the mono-stereo settings from the saved settings.
-void restoreMonoStereoSettings() {
+/// @brief Restore the device settings from the saved settings.
+void restoreDeviceSettings() {
   Settings &local_settings = SavedSettings.GetSettings();
 
   mono_stereo_mode = static_cast<MonoStereoMode>(local_settings.mono_stereo_mode);
+  polarity_mode = static_cast<PolarityMode>(local_settings.polarity_mode);
+  reverb_knob_mode = static_cast<ReverbKnobMode>(local_settings.reverb_knob_mode);
   updateReverbScales(mono_stereo_mode);
 }
 
@@ -505,17 +552,22 @@ void handleNormalPress(Funbox::Switches footswitch) {
     p_sw3_capture.Reset();
 
     pedal_mode = PEDAL_MODE_NORMAL;
-  } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Only save the settings if the RIGHT footswitch is pressed in mono-stereo
-    // edit mode. The LEFT footswitch is used to exit mono-stereo edit mode
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Only save the settings if the RIGHT footswitch is pressed in device
+    // settings mode. The LEFT footswitch is used to exit device settings mode
     // without saving.
     if (footswitch == Funbox::FOOTSWITCH_2) {
-      // Save the mono-stereo settings
-      saveMonoStereoSettings();
+      // Save the device settings
+      saveDeviceSettings();
     } else {
-      // Cancel: restore mono-stereo settings AND bypass states
-      restoreMonoStereoSettings();
+      // Cancel: restore device settings AND bypass states
+      restoreDeviceSettings();
     }
+
+    // Reset all switch captures when exiting device settings mode
+    p_sw1_capture.Reset();
+    p_sw2_capture.Reset();
+    p_sw3_capture.Reset();
 
     pedal_mode = PEDAL_MODE_NORMAL;
   } else {
@@ -538,7 +590,7 @@ void handleNormalPress(Funbox::Switches footswitch) {
 
 void handleDoublePress(Funbox::Switches footswitch) {
   // Ignore double presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
     return;
   }
 
@@ -558,7 +610,7 @@ void handleDoublePress(Funbox::Switches footswitch) {
 void handleLongPress(Funbox::Switches footswitch) {
 
   // Ignore long presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
     return;
   }
 
@@ -587,8 +639,11 @@ void handleLongPress(Funbox::Switches footswitch) {
     bypass_verb = false; // Make sure that reverb is ON
     pedal_mode = PEDAL_MODE_EDIT_REVERB;
   } else if (footswitch == Funbox::FOOTSWITCH_2) {
-    // FOOTSWITCH_2 long press: Enter mono-stereo config.
-    pedal_mode = PEDAL_MODE_EDIT_MONO_STEREO;
+    // FOOTSWITCH_2 long press: Enter device settings.
+    p_sw1_capture.Capture(switchPosForValue(kReverbKnobMap, reverb_knob_mode));
+    p_sw2_capture.Capture(switchPosForValue(kPolarityMap, polarity_mode));
+    p_sw3_capture.Capture(switchPosForValue(kMonoStereoMap, mono_stereo_mode));
+    pedal_mode = PEDAL_MODE_EDIT_DEVICE_SETTINGS;
   }
 }
 
@@ -609,25 +664,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   static float trem_val;
   hw.ProcessAllControls();
 
-  // Read DIP switches to determine reverb type (runtime update)
-#if defined(PLATFORM_funbox)
-  {
-    bool dip1 = hw.switches[Funbox::DIP_SWITCH_1].RawState();
-    bool dip2 = hw.switches[Funbox::DIP_SWITCH_2].RawState();
-    if (!dip1 && !dip2) {
-      current_reverb_type = REVERB_PLATE;
-    } else if (!dip1 && dip2) {
-      current_reverb_type = REVERB_SPRING;
-    } else if (dip1 && !dip2) {
-      current_reverb_type = REVERB_HALL;
-    } else {
-      current_reverb_type = REVERB_PLATE; // Default for both on
-    }
-  }
-#else
-  current_reverb_type = REVERB_PLATE;
-#endif
-
   if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
     // Edit mode
 
@@ -642,13 +678,13 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         led_right.Set(led_state ? 1.0f : 0.0f);
       }
     }
-  } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Mono-Stereo edit mode
-    // Blink the left & right LEDs alternately to indicate mono-stereo edit mode
-    static uint32_t mono_stereo_edit_count = 0;
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Device settings mode
+    // Blink the left & right LEDs alternately to indicate device settings mode
+    static uint32_t device_settings_edit_count = 0;
     static bool led_state = true;
-    if (++mono_stereo_edit_count >= hw.AudioCallbackRate() / 2) {
-      mono_stereo_edit_count = 0;
+    if (++device_settings_edit_count >= hw.AudioCallbackRate() / 2) {
+      device_settings_edit_count = 0;
       led_state = !led_state;
       led_left.Set(led_state ? 1.0f : 0.0f);
       led_right.Set(led_state ? 0.0f : 1.0f);
@@ -678,6 +714,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   TremDelMakeUpGain makeup_gain = (!bypass_delay || !bypass_trem) ? MAKEUP_GAIN_NORMAL : MAKEUP_GAIN_NONE;
 
   if (pedal_mode == PEDAL_MODE_NORMAL) {
+    // Reverb type from SW1
+    current_reverb_type = kReverbTypeMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)];
+
     osc.SetFreq(p_trem_speed.Process());
     static float depth = 0;
     depth = daisysp::fclamp(p_trem_depth.Process(), 0.f, 1.f);
@@ -708,8 +747,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     delayL.feedback = delayR.feedback = p_delay_feedback.Process();
     delay_drywet = (int)p_delay_amt.Process();
 
-    // Reverb dry/wet mode
-    switch (kReverbKnobMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)]) {
+    // Reverb dry/wet mode (from saved setting)
+    switch (reverb_knob_mode) {
       case REVERB_KNOB_ALL_DRY:
         plate_dry = 1.0;
         break;
@@ -736,21 +775,35 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
     updatePlateReverbParameters();
 
-  } else if (pedal_mode == PEDAL_MODE_EDIT_MONO_STEREO) {
-    // Mono-Stereo edit mode
-    // Read in the mono-stereo mode from toggle switch 3
-    switch (hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)) {
-      case Funbox::TOGGLESWITCH_MIDDLE:
-        mono_stereo_mode = MS_MODE_MISO; // Mono In, Stereo Out
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Device settings mode with switch capture (soft takeover)
+
+    // SW1: Reverb wet/dry mode
+    reverb_knob_mode = kReverbKnobMap[p_sw1_capture.Process()];
+
+    // Apply reverb dry/wet so changes are audible in settings mode
+    switch (reverb_knob_mode) {
+      case REVERB_KNOB_ALL_DRY:
+        plate_dry = 1.0;
         break;
-      case Funbox::TOGGLESWITCH_LEFT:
-        mono_stereo_mode = MS_MODE_MIMO; // Mono In, Mono Out
+      case REVERB_KNOB_DRY_WET_MIX:
+        plate_dry = 1.0 - plate_wet;
         break;
-      default: // TOGGLESWITCH_RIGHT
-        mono_stereo_mode = MS_MODE_SISO; // Stereo In, Stereo Out
+      case REVERB_KNOB_ALL_WET:
+        plate_dry = 0.0f;
+        break;
     }
+
+    // SW2: Polarity mode
+    polarity_mode = kPolarityMap[p_sw2_capture.Process()];
+
+    // SW3: Mono/stereo mode
+    mono_stereo_mode = kMonoStereoMap[p_sw3_capture.Process()];
     updateReverbScales(mono_stereo_mode);
   }
+
+  float polarity_L = (polarity_mode == POLARITY_INVERT_LEFT) ? -1.0f : 1.0f;
+  float polarity_R = (polarity_mode == POLARITY_INVERT_RIGHT) ? -1.0f : 1.0f;
 
   for (size_t i = 0; i < size; ++i) {
     float dry_L = in[0][i];
@@ -888,12 +941,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     if (mono_stereo_mode == MS_MODE_MIMO) {
-      out[0][i] = (s_L * 0.5) + (s_R * 0.5); // Sum the processed left and right channels
-      out[1][i] = 0.0f; // Mute the unused channel
+      out[0][i] = ((s_L * 0.5) + (s_R * 0.5)) * polarity_L;
+      out[1][i] = 0.0f;
     } else {
-      // Send stereo output in MISO and SISO
-      out[0][i] = s_L;
-      out[1][i] = s_R;
+      out[0][i] = s_L * polarity_L;
+      out[1][i] = s_R * polarity_R;
     }
   }
 }
@@ -1000,6 +1052,8 @@ int main() {
     plate_tank_mod_shape_pos, // tank_mod_shape_pos
     plate_pre_delay, // pre_delay
     MS_MODE_MIMO, // mono_stereo_mode
+    POLARITY_NORMAL, // polarity_mode
+    REVERB_KNOB_DRY_WET_MIX, // reverb_knob_mode
     true,         // bypass_reverb
     true,         // bypass_tremolo
     true,         // bypass_delay

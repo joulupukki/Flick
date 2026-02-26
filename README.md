@@ -26,16 +26,16 @@ Feature demo video (28 June 2025):
 | KNOB 4 | Delay Time |  |
 | KNOB 5 | Delay Feedback |  |
 | KNOB 6 | Delay Dry/Wet Amount |  |
-| SWITCH 1 | Reverb knob funcion | **LOW** - 100% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 0% Dry, 0-100% Wet |
+| SWITCH 1 | Reverb Type | **LOW** - Hall<br/>**MID** - Plate<br/>**HIGH** - Spring |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
 | SWITCH 3 | Delay Timing | **LOW** - Triplet (2/3)<br/>**MID** - Quarter (straight)<br/>**HIGH** - Dotted Eighth (3/4) |
 | FOOTSWITCH 1 | Reverb On/Off | Normal press toggles reverb on/off.<br/>Long press toggles reverb edit mode (see below). |
-| FOOTSWITCH 2 | Tremolo/Delay On/Off | Normal press toggles tremolo.<br/>Double press toggles delay.<br/><br/>**LED:**<br/>- 100% when only delay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Mono-Stereo Edit mode (see below). |
+| FOOTSWITCH 2 | Tremolo/Delay On/Off | Normal press toggles tremolo.<br/>Double press toggles delay.<br/><br/>**LED:**<br/>- 100% when only delay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Device Settings (see below). |
 
 ### Controls (Reverb Edit Mode)
-*Both LEDs flash when in edit mode.*
+*Both LEDs flash when in Reverb Edit Mode.*
 
-**Parameter Capture:** When entering reverb edit mode, all knobs and switches freeze at their current values. To prevent sudden parameter jumps, each control remains frozen until you move it beyond a threshold (5% for knobs, any position change for switches). This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
+**Parameter Capture:** When entering Reverb Edit Mode, all knobs and switches freeze at their current values. To prevent sudden parameter jumps, each control remains frozen until you move it beyond a threshold (5% for knobs, any position change for switches). This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
@@ -51,14 +51,18 @@ Feature demo video (28 June 2025):
 | FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Reverb Edit Mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Reverb Edit Mode. |
 
-### Controls (Mono-Stereo Edit Mode)
-*Both LEDs flash alternatively when in Mono-Stereo Edit mode.*
+### Controls (Settings Edit Mode)
+*Both LEDs flash alternatively when in Settings Edit Mode.*
+
+**Parameter Capture:** When entering Settings Edit Mode, the switches freeze at their current values. You must actively move a switch to get a change to happen. This helps prevent unexpected changes when jumping between normal and edit mode.
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
-| SWITCH 3 | Mono-Stereo Mode | **LOW** - Mono in, Mono Out<br/>**MID** - Mono in, Stereo Out<br/>**HIGH** - Stereo In, Stereo Out |
-| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Mono-Stereo Edit Mode. |
-| FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Mono-Stereo Edit Mode. |
+| SWITCH 1 | Reverb Knob Function | **LOW** - 0% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 100% Dry, 0-100% Wet |
+| SWITCH 2 | Polarity | **LOW** - Invert Right<br/>**MID** - Normal<br/>**HIGH** - Invert Left |
+| SWITCH 3 | Mono/Stereo Mode | **LOW** - Mono in, Mono Out<br/>**MID** - Mono in, Stereo Out<br/>**HIGH** - Stereo In, Stereo Out |
+| FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Settings Edit Mode. |
+| FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Settings Edit Mode. |
 
 ### Factory Reset (Restore default reverb parameters)
 
