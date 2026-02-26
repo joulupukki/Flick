@@ -33,9 +33,9 @@ Feature demo video (28 June 2025):
 | FOOTSWITCH 2 | Tremolo/Delay On/Off | Normal press toggles tremolo.<br/>Double press toggles delay.<br/><br/>**LED:**<br/>- 100% when only delay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Device Settings (see below). |
 
 ### Controls (Reverb Edit Mode)
-*Both LEDs flash when in edit mode.*
+*Both LEDs flash when in Reverb Edit Mode.*
 
-**Parameter Capture:** When entering reverb edit mode, all knobs and switches freeze at their current values. To prevent sudden parameter jumps, each control remains frozen until you move it beyond a threshold (5% for knobs, any position change for switches). This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
+**Parameter Capture:** When entering Reverb Edit Mode, all knobs and switches freeze at their current values. To prevent sudden parameter jumps, each control remains frozen until you move it beyond a threshold (5% for knobs, any position change for switches). This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
@@ -52,7 +52,9 @@ Feature demo video (28 June 2025):
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Reverb Edit Mode. |
 
 ### Controls (Settings Edit Mode)
-*Both LEDs flash alternatively when in Settings Edit mode.*
+*Both LEDs flash alternatively when in Settings Edit Mode.*
+
+**Parameter Capture:** When entering Settings Edit Mode, the switches freeze at their current values. You must actively move a switch to get a change to happen. This helps prevent unexpected changes when jumping between normal and edit mode.
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
