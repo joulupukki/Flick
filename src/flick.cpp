@@ -46,7 +46,7 @@ using daisysp::fonepole;
 
 /// Increment this when changing the settings struct so the software will know
 /// to reset to defaults if this ever changes.
-#define SETTINGS_VERSION 7
+#define SETTINGS_VERSION 8
 
 Funbox hw;
 
@@ -139,6 +139,7 @@ struct Settings {
   bool bypass_reverb;
   bool bypass_tremolo;
   bool bypass_delay;
+  float tapped_delay_samples; // Persisted tap tempo delay time in samples (0 = use knob)
 
 	//Overloading the != operator
 	//This is necessary as this operator is used in the PersistentStorage source code
@@ -158,7 +159,8 @@ struct Settings {
       a.reverb_knob_mode == reverb_knob_mode &&
       a.bypass_reverb == bypass_reverb &&
       a.bypass_tremolo == bypass_tremolo &&
-      a.bypass_delay == bypass_delay
+      a.bypass_delay == bypass_delay &&
+      a.tapped_delay_samples == tapped_delay_samples
     );
   }
 };
@@ -204,6 +206,7 @@ uint32_t last_tap_time = 0;
 int tap_flash_counter = 0;
 bool just_exited_tap_tempo = false;
 KnobCapture p_delay_knob_capture(p_knob_4);
+float tap_tempo_knob_baseline = -1.0f; // Knob position baseline for detecting movement in normal mode
 
 struct Delay {
   DelayLine<float, MAX_DELAY> *del;
@@ -256,7 +259,7 @@ constexpr TremoloMode kTremoloModeMap[] = {
 
 enum DelayTimingMode {
   DELAY_TIMING_DOTTED_EIGHTH,   // 3/4 of knob value
-  DELAY_TIMING_TRIPLET,         // 2/3 of knob value
+  DELAY_TIMING_TRIPLET,         // 1/3 of knob value (3 echoes per beat)
   DELAY_TIMING_QUARTER,         // 1x knob value (straight)
 };
 
@@ -268,7 +271,7 @@ constexpr DelayTimingMode kDelayTimingMap[] = {
 
 constexpr float kDelayTimingMultiplier[] = {
   0.75f,    // DELAY_TIMING_DOTTED_EIGHTH
-  0.6667f,  // DELAY_TIMING_TRIPLET
+  0.3333f,  // DELAY_TIMING_TRIPLET (1/3 — eighth note triplets)
   1.0f,     // DELAY_TIMING_QUARTER
 };
 
@@ -479,6 +482,7 @@ void loadSettings() {
   bypass_verb = local_settings.bypass_reverb;
   bypass_trem = local_settings.bypass_tremolo;
   bypass_delay = local_settings.bypass_delay;
+  tapped_delay_samples = local_settings.tapped_delay_samples;
 
   updatePlateReverbParameters();
 }
@@ -516,6 +520,7 @@ void saveBypassStates() {
   local_settings.bypass_reverb = bypass_verb;
   local_settings.bypass_tremolo = bypass_trem;
   local_settings.bypass_delay = bypass_delay;
+  local_settings.tapped_delay_samples = tapped_delay_samples;
 
   trigger_settings_save = true;
 }
@@ -716,14 +721,19 @@ void enterTapTempo() {
   // Capture delay time knob so it's ignored until physically moved
   p_delay_knob_capture.Capture(p_knob_4.Process());
 
-  // Reset tap state
+  // Preserve the current delay time as the quarter-note base so the delay
+  // doesn't jump when re-entering tap tempo. Undo the timing multiplier
+  // since the audio callback re-applies it from toggle switch 3.
+  DelayTimingMode current_timing = kDelayTimingMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)];
+  tapped_delay_samples = delayL.delay_target / kDelayTimingMultiplier[current_timing];
+
+  // Reset tap state (but NOT tapped_delay_samples — we just set it above)
   tap_count = 0;
-  tapped_delay_samples = 0.0f;
   tap_timestamps[0] = tap_timestamps[1] = tap_timestamps[2] = 0;
   tap_flash_counter = 0;
 
-  // Initialize LED tempo from current delay time so LED2 flashes immediately
-  tapped_tempo_ms = delayL.delay_target / SAMPLE_RATE * 1000.0f;
+  // Initialize LED tempo from the quarter-note base (not the subdivided delay_target)
+  tapped_tempo_ms = tapped_delay_samples / SAMPLE_RATE * 1000.0f;
 
   // Start the auto-exit timer
   last_tap_time = System::GetNow();
@@ -738,13 +748,20 @@ void enterTapTempo() {
 }
 
 void exitTapTempo() {
-  // If no tempo was tapped, or the knob was already moved, fully reset.
-  // Otherwise keep the knob capture active so tapped tempo persists in
-  // normal mode until the user physically moves the delay knob.
-  if (tapped_delay_samples == 0.0f || !p_delay_knob_capture.IsFrozen()) {
-    p_delay_knob_capture.Reset();
+  bool knob_was_moved = !p_delay_knob_capture.IsFrozen();
+  p_delay_knob_capture.Reset();
+
+  if (knob_was_moved || tapped_delay_samples == 0.0f) {
+    // Knob was moved during tap tempo or no delay set — clear tapped delay
     tapped_delay_samples = 0.0f;
+    tap_tempo_knob_baseline = -1.0f;
+  } else {
+    // Set baseline for normal mode knob movement detection using the
+    // hw knob value (always up-to-date, no stale filter issues)
+    tap_tempo_knob_baseline = hw.GetKnobValue(Funbox::KNOB_4);
   }
+
+  saveBypassStates(); // Persist the tapped delay state
   pedal_mode = PEDAL_MODE_NORMAL;
 }
 
@@ -773,6 +790,7 @@ void registerTap() {
     if (tapped_delay_samples > MAX_DELAY) tapped_delay_samples = MAX_DELAY;
 
     tapped_tempo_ms = avg_ms;
+    saveBypassStates(); // Persist the new tapped delay
   }
 
   last_tap_time = now;
@@ -895,24 +913,28 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     //
     // Delay
     //
+    // Determine the base delay time (quarter-note value, before timing subdivision).
+    // The timing multiplier (triplet, quarter, dotted eighth) is applied once at the
+    // end, regardless of whether the base comes from tap tempo, persisted tapped
+    // delay, or the delay knob.
+    //
     DelayTimingMode delay_timing = kDelayTimingMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)];
+    float base_delay_time;
 
     if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
-      // Process knob capture to detect movement (value is discarded)
+      // Process knob capture to detect movement
       p_delay_knob_capture.Process();
 
-      float delay_time;
       if (!p_delay_knob_capture.IsFrozen()) {
         // Knob was physically moved — use knob value
-        delay_time = p_delay_time.Process();
+        base_delay_time = p_delay_time.Process();
       } else if (tapped_delay_samples > 0.0f) {
         // Use tapped tempo
-        delay_time = tapped_delay_samples;
+        base_delay_time = tapped_delay_samples;
       } else {
         // No taps yet — use current knob value
-        delay_time = p_delay_time.Process();
+        base_delay_time = p_delay_time.Process();
       }
-      delayL.delay_target = delayR.delay_target = delay_time * kDelayTimingMultiplier[delay_timing];
 
       // Auto-exit after 4 seconds of no taps
       if (System::GetNow() - last_tap_time > TAP_TEMPO_TIMEOUT_MS) {
@@ -920,21 +942,33 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       }
     } else {
       // Normal mode delay processing
-      // If tapped tempo is still active (knob not yet moved after tap tempo exit),
-      // keep using it until the knob is physically moved.
-      if (tapped_delay_samples > 0.0f && p_delay_knob_capture.IsFrozen()) {
-        p_delay_knob_capture.Process();  // Track knob movement
-        delayL.delay_target = delayR.delay_target = tapped_delay_samples * kDelayTimingMultiplier[delay_timing];
-        if (!p_delay_knob_capture.IsFrozen()) {
-          // Knob was moved — clear tapped tempo and reset capture
-          tapped_delay_samples = 0.0f;
-          p_delay_knob_capture.Reset();
+      // If tapped tempo is active, use it until the delay knob is physically moved.
+      // Uses hw.GetKnobValue() for movement detection — this is always up-to-date
+      // (updated by hw.ProcessAllControls() every callback) unlike p_knob_4 which
+      // has a stale smoothing filter when not actively called.
+      if (tapped_delay_samples > 0.0f) {
+        float current_knob = hw.GetKnobValue(Funbox::KNOB_4);
+        if (tap_tempo_knob_baseline < 0.0f) {
+          // First callback with tapped delay (e.g. after boot) — record baseline
+          tap_tempo_knob_baseline = current_knob;
         }
+        if (fabs(current_knob - tap_tempo_knob_baseline) > 0.05f) {
+          // Knob moved >5% from baseline — switch to knob control
+          tapped_delay_samples = 0.0f;
+          tap_tempo_knob_baseline = -1.0f;
+          saveBypassStates(); // Persist the cleared tapped delay
+        }
+      }
+
+      if (tapped_delay_samples > 0.0f) {
+        base_delay_time = tapped_delay_samples;
       } else {
-        float delay_time_raw = p_delay_time.Process();
-        delayL.delay_target = delayR.delay_target = delay_time_raw * kDelayTimingMultiplier[delay_timing];
+        base_delay_time = p_delay_time.Process();
       }
     }
+
+    // Apply timing subdivision (triplet, quarter, dotted eighth) in one place
+    delayL.delay_target = delayR.delay_target = base_delay_time * kDelayTimingMultiplier[delay_timing];
 
     delayL.feedback = delayR.feedback = p_delay_feedback.Process();
     delay_drywet = (int)p_delay_amt.Process();
@@ -1249,6 +1283,7 @@ int main() {
     true,         // bypass_reverb
     true,         // bypass_tremolo
     true,         // bypass_delay
+    0.0f,         // tapped_delay_samples
   };
   SavedSettings.Init(defaultSettings);
 
@@ -1262,6 +1297,14 @@ int main() {
   hw.RegisterFootswitchCallbacks(&callbacks);
 
   hw.StartAdc();
+  hw.DelayMs(5); // Wait for ADC DMA to provide valid data
+  // Warm up the knob smoothing filters so they converge to the actual knob
+  // positions before the audio callback starts. Without this, the filters
+  // start at 0 and ramp up over ~30 callbacks, which can cause the tap tempo
+  // knob baseline to drift past the 5% threshold and clear the tapped delay.
+  for (int i = 0; i < 100; i++) {
+    hw.ProcessAnalogControls();
+  }
   hw.ProcessAllControls();
   if (hw.switches[Funbox::FOOTSWITCH_2].RawState()) {
     is_factory_reset_mode = true;

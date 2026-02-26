@@ -134,7 +134,7 @@ Three tremolo modes via Toggle Switch 2:
 
 Simple digital delay with:
 - Delay time: 50ms to 2 seconds (logarithmic), multiplied by timing subdivision
-- Timing subdivision via Toggle Switch 3: Triplet (×0.6667), Quarter/straight (×1.0), Dotted Eighth (×0.75)
+- Timing subdivision via Toggle Switch 3: Triplet (×0.3333), Quarter/straight (×1.0), Dotted Eighth (×0.75)
 - Feedback: 0-100%
 - Dry/wet mix: 0-100%
 - Makeup gain: automatically engaged (×1.66 for delay, ×1.2 for tremolo) when delay or tremolo is active
