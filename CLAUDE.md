@@ -174,6 +174,7 @@ Simple digital delay with:
 - Footswitch gestures:
   - Footswitch 1 (Left):
     - Single press: Toggle reverb on/off
+    - Double press: Enter tap tempo mode
     - Long press: Enter reverb edit mode
   - Footswitch 2 (Right):
     - Single press: Toggle tremolo on/off
@@ -216,6 +217,17 @@ Simple digital delay with:
   - RIGHT: Stereo In, Stereo Out (SISO)
 - Footswitch 1: Cancel
 - Footswitch 2: Save to flash
+
+**Tap Tempo Mode** (`PEDAL_MODE_TAP_TEMPO`)
+- Activated by double-press of Footswitch 1
+- Right LED flashes at tapped tempo; left LED shows reverb status
+- Delay is automatically enabled on entry if bypassed
+- Footswitch 2 registers taps (tempo averaged from last 3 taps)
+- Delay knob (Knob 4) frozen via KnobCapture until physically moved (overrides tapped tempo)
+- Toggle Switch 3 timing subdivision still applies to tapped tempo
+- Auto-exits after 4 seconds of no taps
+- Footswitch 1: Exit tap tempo (return to normal mode)
+- `just_exited_tap_tempo` flag prevents spurious double/long press events on exit
 
 ### Persistent Settings
 
@@ -298,30 +310,30 @@ make PLATFORM=hothouse
 
 **Control Mapping:**
 
-| Control | Normal Mode | Reverb Edit | Settings Edit |
-|---------|-------------|-------------|---------------|
-| Knob 1  | Reverb amount | Reverb amount | - |
-| Knob 2  | Trem speed | Pre-delay | - |
-| Knob 3  | Trem depth | Decay | - |
-| Knob 4  | Delay time | Diffusion | - |
-| Knob 5  | Delay feedback | Input cut | - |
-| Knob 6  | Delay amount | Tank cut | - |
-| Switch 1 | Reverb type | Mod speed | Reverb wet/dry |
-| Switch 2 | Trem type | Mod depth | Polarity |
-| Switch 3 | Delay timing | Mod shape | Mono/Stereo |
-| FSW 1 Single | Reverb on/off | Cancel | Cancel |
-| FSW 1 Long | Enter reverb edit | - | - |
-| FSW 2 Single | Tremolo on/off | Save | Save |
-| FSW 2 Double | Delay on/off | - | - |
-| FSW 2 Long | Enter settings edit | - | - |
-| Both FSW Long | DFU mode | - | - |
+| Control | Normal Mode | Tap Tempo | Reverb Edit | Settings Edit |
+|---------|-------------|-----------|-------------|---------------|
+| Knob 1  | Reverb amount | Reverb amount | Reverb amount | - |
+| Knob 2  | Trem speed | Trem speed | Pre-delay | - |
+| Knob 3  | Trem depth | Trem depth | Decay | - |
+| Knob 4  | Delay time | Delay time (frozen) | Diffusion | - |
+| Knob 5  | Delay feedback | Delay feedback | Input cut | - |
+| Knob 6  | Delay amount | Delay amount | Tank cut | - |
+| Switch 1 | Reverb type | Reverb type | Mod speed | Reverb wet/dry |
+| Switch 2 | Trem type | Trem type | Mod depth | Polarity |
+| Switch 3 | Delay timing | Delay timing | Mod shape | Mono/Stereo |
+| FSW 1 Single | Reverb on/off | Exit tap tempo | Cancel | Cancel |
+| FSW 1 Double | Enter tap tempo | - | - | - |
+| FSW 1 Long | Enter reverb edit | - | - | - |
+| FSW 2 Single | Tremolo on/off | Register tap | Save | Save |
+| FSW 2 Double | Delay on/off | - | - | - |
+| FSW 2 Long | Enter settings edit | - | - | - |
+| Both FSW Long | DFU mode | - | - | - |
 
 **LED Indicators:**
 - Left LED: Reverb on/off
 - Right LED:
-  - Solid: Delay only
-  - 40% pulsing: Tremolo only
-  - 100% pulsing: Both active
+  - Normal: Solid (delay only), 40% pulsing (tremolo only), 100% pulsing (both)
+  - Tap Tempo: Rhythmic flash at tapped tempo (10% duty cycle), brief flash on each tap
 
 ## Platform Differences
 

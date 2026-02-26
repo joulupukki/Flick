@@ -65,6 +65,10 @@ constexpr float DELAY_TIME_MIN_SECONDS = 0.05f;
 constexpr float DELAY_WET_MIX_ATTENUATION = 0.333f; // Attenuation for wet delay signal
 constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet percentage
 
+// Tap tempo constants
+constexpr uint32_t TAP_TEMPO_TIMEOUT_MS = 4000;  // Auto-exit after 4 seconds of no taps
+constexpr int TAP_FLASH_CALLBACKS = 300;          // ~50ms LED flash at 6000 callbacks/sec
+
 // Reverb constants (Dattorro plate reverb scaling)
 
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
@@ -101,7 +105,8 @@ constexpr float HARMONIC_TREM_EQ_LOW_SHELF_Q = 1.0f; // Shelf slope
 enum PedalMode {
   PEDAL_MODE_NORMAL,
   PEDAL_MODE_EDIT_REVERB,     // Edit mode activated by double-press of the left foot switch
-  PEDAL_MODE_EDIT_DEVICE_SETTINGS // Edit mode activated by long-press of the right foot switch
+  PEDAL_MODE_EDIT_DEVICE_SETTINGS, // Edit mode activated by long-press of the right foot switch
+  PEDAL_MODE_TAP_TEMPO        // Tap tempo mode activated by double-press of the left foot switch
 };
 
 enum MonoStereoMode {                       // Controlled by Toggle Switch 3
@@ -189,6 +194,16 @@ KnobCapture p_knob_6_capture(p_knob_6);
 SwitchCapture p_sw1_capture(hw, Funbox::TOGGLESWITCH_1);
 SwitchCapture p_sw2_capture(hw, Funbox::TOGGLESWITCH_2);
 SwitchCapture p_sw3_capture(hw, Funbox::TOGGLESWITCH_3);
+
+// Tap tempo state
+uint32_t tap_timestamps[3] = {0, 0, 0};
+int tap_count = 0;
+float tapped_delay_samples = 0.0f;
+float tapped_tempo_ms = 0.0f;
+uint32_t last_tap_time = 0;
+int tap_flash_counter = 0;
+bool just_exited_tap_tempo = false;
+KnobCapture p_delay_knob_capture(p_knob_4);
 
 struct Delay {
   DelayLine<float, MAX_DELAY> *del;
@@ -531,7 +546,25 @@ void restoreDeviceSettings() {
   updateReverbScales(mono_stereo_mode);
 }
 
+// Forward declarations for tap tempo functions (defined after handleLongPress)
+void enterTapTempo();
+void exitTapTempo();
+void registerTap();
+
 void handleNormalPress(Funbox::Switches footswitch) {
+  if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+    if (footswitch == Funbox::FOOTSWITCH_1) {
+      exitTapTempo();
+      just_exited_tap_tempo = true;
+    } else {
+      registerTap();
+    }
+    return;
+  }
+
+  // Clear the tap tempo exit guard
+  just_exited_tap_tempo = false;
+
   if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
     // Only save the settings if the RIGHT footswitch is pressed in edit mode.
     // The LEFT footswitch is used to exit edit mode without saving.
@@ -589,8 +622,23 @@ void handleNormalPress(Funbox::Switches footswitch) {
 }
 
 void handleDoublePress(Funbox::Switches footswitch) {
+  // Guard: if we just exited tap tempo, consume this event silently
+  if (just_exited_tap_tempo) {
+    just_exited_tap_tempo = false;
+    return;
+  }
+
+  // In tap tempo mode, FS2 double press is just another tap
+  if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+    if (footswitch == Funbox::FOOTSWITCH_2) {
+      registerTap();
+    }
+    return;
+  }
+
   // Ignore double presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB ||
+      pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
     return;
   }
 
@@ -598,19 +646,28 @@ void handleDoublePress(Funbox::Switches footswitch) {
   // processed, so reverse that right off the bat.
   handleNormalPress(footswitch);
 
-  if (footswitch == Funbox::FOOTSWITCH_2) {
+  if (footswitch == Funbox::FOOTSWITCH_1) {
+    // FOOTSWITCH_1 double press: Enter tap tempo mode
+    enterTapTempo();
+  } else if (footswitch == Funbox::FOOTSWITCH_2) {
     // FOOTSWITCH_2 double press: Toggle delay on/off
     bypass_delay = !bypass_delay;
 
     saveBypassStates();
   }
-  // FOOTSWITCH_1 double press: No action (reserved for potential future use)
 }
 
 void handleLongPress(Funbox::Switches footswitch) {
+  // Guard: if we just exited tap tempo, consume this event silently
+  if (just_exited_tap_tempo) {
+    just_exited_tap_tempo = false;
+    return;
+  }
 
-  // Ignore long presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB || pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+  // Ignore long presses in edit modes or tap tempo
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB ||
+      pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS ||
+      pedal_mode == PEDAL_MODE_TAP_TEMPO) {
     return;
   }
 
@@ -645,6 +702,81 @@ void handleLongPress(Funbox::Switches footswitch) {
     p_sw3_capture.Capture(switchPosForValue(kMonoStereoMap, mono_stereo_mode));
     pedal_mode = PEDAL_MODE_EDIT_DEVICE_SETTINGS;
   }
+}
+
+void enterTapTempo() {
+  // Warm up p_knob_4's smoothing filter before capturing. p_knob_4 is not
+  // called during normal mode, so its internal filter may be stale. Without
+  // this, the filter "catches up" on subsequent Process() calls, drifting
+  // past the 5% threshold and unfreezing the capture immediately.
+  for (int i = 0; i < 32; i++) {
+    p_knob_4.Process();
+  }
+
+  // Capture delay time knob so it's ignored until physically moved
+  p_delay_knob_capture.Capture(p_knob_4.Process());
+
+  // Reset tap state
+  tap_count = 0;
+  tapped_delay_samples = 0.0f;
+  tap_timestamps[0] = tap_timestamps[1] = tap_timestamps[2] = 0;
+  tap_flash_counter = 0;
+
+  // Initialize LED tempo from current delay time so LED2 flashes immediately
+  tapped_tempo_ms = delayL.delay_target / SAMPLE_RATE * 1000.0f;
+
+  // Start the auto-exit timer
+  last_tap_time = System::GetNow();
+
+  // Enable delay if it's currently off (so taps produce audible delay)
+  if (bypass_delay) {
+    bypass_delay = false;
+    saveBypassStates();
+  }
+
+  pedal_mode = PEDAL_MODE_TAP_TEMPO;
+}
+
+void exitTapTempo() {
+  // If no tempo was tapped, or the knob was already moved, fully reset.
+  // Otherwise keep the knob capture active so tapped tempo persists in
+  // normal mode until the user physically moves the delay knob.
+  if (tapped_delay_samples == 0.0f || !p_delay_knob_capture.IsFrozen()) {
+    p_delay_knob_capture.Reset();
+    tapped_delay_samples = 0.0f;
+  }
+  pedal_mode = PEDAL_MODE_NORMAL;
+}
+
+void registerTap() {
+  uint32_t now = System::GetNow();
+
+  // Shift timestamps (newest at index 0)
+  tap_timestamps[2] = tap_timestamps[1];
+  tap_timestamps[1] = tap_timestamps[0];
+  tap_timestamps[0] = now;
+  if (tap_count < 3) tap_count++;
+
+  if (tap_count >= 2) {
+    // Average the intervals between available taps
+    uint32_t total = 0;
+    int intervals = tap_count - 1;
+    for (int i = 0; i < intervals; i++) {
+      total += tap_timestamps[i] - tap_timestamps[i + 1];
+    }
+    float avg_ms = (float)total / intervals;
+
+    // Convert to samples and clamp to valid delay range
+    tapped_delay_samples = avg_ms * SAMPLE_RATE / 1000.0f;
+    float min_delay = SAMPLE_RATE * DELAY_TIME_MIN_SECONDS;
+    if (tapped_delay_samples < min_delay) tapped_delay_samples = min_delay;
+    if (tapped_delay_samples > MAX_DELAY) tapped_delay_samples = MAX_DELAY;
+
+    tapped_tempo_ms = avg_ms;
+  }
+
+  last_tap_time = now;
+  tap_flash_counter = TAP_FLASH_CALLBACKS;  // Trigger brief LED flash
 }
 
 inline float hardLimit100_(const float &x) {
@@ -690,11 +822,31 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       led_right.Set(led_state ? 0.0f : 1.0f);
     }
   } else {
-    // Normal mode
+    // Normal mode (and tap tempo)
     led_left.Set(bypass_verb ? 0.0f : 1.0f);
 
-    // Reduce number of LED Updates for pulsing trem LED
-    {
+    if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+      // Tap tempo right LED: rhythmic flash at tapped tempo
+      static uint32_t tap_led_counter = 0;
+
+      if (tap_flash_counter > 0) {
+        // Brief flash on each tap (overrides rhythmic flash)
+        tap_flash_counter--;
+        led_right.Set(1.0f);
+        tap_led_counter = 0;  // Sync rhythmic flash to tap
+      } else if (tapped_tempo_ms > 0.0f) {
+        // Continuous rhythmic flash at tapped tempo
+        uint32_t period = (uint32_t)(tapped_tempo_ms * hw.AudioCallbackRate() / 1000.0f);
+        if (period > 0) {
+          tap_led_counter = (tap_led_counter + 1) % period;
+          led_right.Set(tap_led_counter < (period / 10) ? 1.0f : 0.0f);  // 10% duty cycle
+        }
+      } else {
+        // No tempo established yet, LED off
+        led_right.Set(0.0f);
+      }
+    } else {
+      // Normal mode right LED (existing pulsing trem/delay logic)
       static int count = 0;
       // set led 100 times/sec
       if (++count == hw.AudioCallbackRate() / 100) {
@@ -713,7 +865,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
   TremDelMakeUpGain makeup_gain = (!bypass_delay || !bypass_trem) ? MAKEUP_GAIN_NORMAL : MAKEUP_GAIN_NONE;
 
-  if (pedal_mode == PEDAL_MODE_NORMAL) {
+  if (pedal_mode == PEDAL_MODE_NORMAL || pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+    // Common processing for normal and tap tempo modes
+
     // Reverb type from SW1
     current_reverb_type = kReverbTypeMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_1)];
 
@@ -742,8 +896,46 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     // Delay
     //
     DelayTimingMode delay_timing = kDelayTimingMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_3)];
-    float delay_time_raw = p_delay_time.Process();
-    delayL.delay_target = delayR.delay_target = delay_time_raw * kDelayTimingMultiplier[delay_timing];
+
+    if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+      // Process knob capture to detect movement (value is discarded)
+      p_delay_knob_capture.Process();
+
+      float delay_time;
+      if (!p_delay_knob_capture.IsFrozen()) {
+        // Knob was physically moved — use knob value
+        delay_time = p_delay_time.Process();
+      } else if (tapped_delay_samples > 0.0f) {
+        // Use tapped tempo
+        delay_time = tapped_delay_samples;
+      } else {
+        // No taps yet — use current knob value
+        delay_time = p_delay_time.Process();
+      }
+      delayL.delay_target = delayR.delay_target = delay_time * kDelayTimingMultiplier[delay_timing];
+
+      // Auto-exit after 4 seconds of no taps
+      if (System::GetNow() - last_tap_time > TAP_TEMPO_TIMEOUT_MS) {
+        exitTapTempo();
+      }
+    } else {
+      // Normal mode delay processing
+      // If tapped tempo is still active (knob not yet moved after tap tempo exit),
+      // keep using it until the knob is physically moved.
+      if (tapped_delay_samples > 0.0f && p_delay_knob_capture.IsFrozen()) {
+        p_delay_knob_capture.Process();  // Track knob movement
+        delayL.delay_target = delayR.delay_target = tapped_delay_samples * kDelayTimingMultiplier[delay_timing];
+        if (!p_delay_knob_capture.IsFrozen()) {
+          // Knob was moved — clear tapped tempo and reset capture
+          tapped_delay_samples = 0.0f;
+          p_delay_knob_capture.Reset();
+        }
+      } else {
+        float delay_time_raw = p_delay_time.Process();
+        delayL.delay_target = delayR.delay_target = delay_time_raw * kDelayTimingMultiplier[delay_timing];
+      }
+    }
+
     delayL.feedback = delayR.feedback = p_delay_feedback.Process();
     delay_drywet = (int)p_delay_amt.Process();
 
@@ -845,7 +1037,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     if (!bypass_trem) {
       // Get tremolo mode from SWITCH_2 (in normal mode)
       TremoloMode tremMode = TREMOLO_SINE;
-      if (pedal_mode == PEDAL_MODE_NORMAL) {
+      if (pedal_mode == PEDAL_MODE_NORMAL || pedal_mode == PEDAL_MODE_TAP_TEMPO) {
         tremMode = kTremoloModeMap[hw.GetToggleswitchPosition(Funbox::TOGGLESWITCH_2)];
       }
       // trem_val gets used above for pulsing LED

@@ -78,6 +78,11 @@ public:
    */
   void Reset();
 
+  /**
+   * @brief Returns whether the parameter is currently frozen (captured but not yet moved).
+   */
+  bool IsFrozen() const { return is_frozen_; }
+
 private:
   daisy::Parameter& knob_;    ///< Reference to the knob's Parameter object
   float captured_knob_value_; ///< Value of the knob at the time of capture
