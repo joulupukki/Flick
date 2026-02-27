@@ -56,6 +56,17 @@ void SpringReverb::Init(float sample_rate) {
     lp_filter_.SetFrequency(6000.0f);
 }
 
+void SpringReverb::Clear() {
+    // Reset all delay line buffers to silence
+    pre_delay_.Reset();
+    main_delay_.Reset();
+    tap_delay_1_.Reset();
+    tap_delay_2_.Reset();
+    for (auto& ap : allpass_filters_) {
+        ap.delay.Reset();
+    }
+}
+
 void SpringReverb::Process(const float* in_left, const float* in_right,
                            float* out_left, float* out_right, size_t size) {
     for (size_t i = 0; i < size; ++i) {

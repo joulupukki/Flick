@@ -22,25 +22,33 @@
 #define HALL_REVERB_HPP
 
 #include "daisysp.h"
+#include "reverb_effect.h"
 #include <array>
 
 namespace flick {
 
-class HallReverb {
+class HallReverb : public ReverbEffect {
 public:
     HallReverb() = default;
-    ~HallReverb() = default;
+    ~HallReverb() override = default;
 
-    void Init(float sample_rate, size_t max_delay = 4000); // ~83ms at 48kHz
+    // ReverbEffect interface
+    void Init(float sample_rate) override;
+    void ProcessSample(float in_left, float in_right, float* out_left, float* out_right) override;
+    void Clear() override;
 
+    // Override parameters this reverb uses
+    void SetDecay(float decay) override { feedback_ = decay; }
+    void SetMix(float mix) override { dry_wet_ = mix; }
+
+    // Legacy methods (keep for compatibility, map to base class methods)
+    void SetFeedback(float feedback) { SetDecay(feedback); }
+    void SetDryWet(float dry_wet) { SetMix(dry_wet); }
+    void SetLpFreq(float freq) { lp_freq_ = freq; }
+
+    // Block processing (non-virtual, hall-specific)
     void Process(const float* in_left, const float* in_right,
                  float* out_left, float* out_right, size_t size);
-
-    void ProcessSample(float in_left, float in_right, float* out_left, float* out_right);
-
-    void SetFeedback(float feedback) { feedback_ = feedback; }
-    void SetDryWet(float dry_wet) { dry_wet_ = dry_wet; }
-    void SetLpFreq(float freq) { lp_freq_ = freq; }
 
 private:
     static constexpr int kNumCombFilters = 4;

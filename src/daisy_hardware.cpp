@@ -212,9 +212,6 @@ DaisyHardware::ToggleswitchPosition DaisyHardware::GetToggleswitchPosition(
                                       switches[SWITCH_3_DOWN]);
 #endif
     default:
-      seed.PrintLine(
-          "ERROR: Unexpected value provided for Toggleswitch 'tsw'. "
-          "Returning TOGGLESWITCH_UNKNOWN by default.");
       return TOGGLESWITCH_UNKNOWN;
   }
 }

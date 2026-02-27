@@ -24,7 +24,7 @@ namespace flick {
 constexpr std::array<int, HallReverb::kNumCombFilters> HallReverb::kCombDelays;
 constexpr std::array<int, HallReverb::kNumAllPassFilters> HallReverb::kAllPassDelays;
 
-void HallReverb::Init(float sample_rate, size_t max_delay) {
+void HallReverb::Init(float sample_rate) {
     sample_rate_ = sample_rate;
 
     // Initialize comb filters
@@ -48,6 +48,17 @@ void HallReverb::Init(float sample_rate, size_t max_delay) {
     // Set all-pass delays
     for (size_t i = 0; i < kNumAllPassFilters; ++i) {
         allpass_filters_[i].delay.SetDelay(static_cast<float>(kAllPassDelays[i]));
+    }
+}
+
+void HallReverb::Clear() {
+    // Reset all delay line buffers to silence
+    for (auto& comb : comb_filters_) {
+        comb.delay.Reset();
+        comb.damp_prev = 0.0f;
+    }
+    for (auto& ap : allpass_filters_) {
+        ap.delay.Reset();
     }
 }
 
