@@ -42,7 +42,7 @@ static DelayLine<float, 4800>* fdn_delay[8] = {
 namespace flick {
 
 constexpr std::array<int, HallReverb::kNumLines> HallReverb::kLineDelays;
-constexpr std::array<int, 2> HallReverb::kInputAPDelays;
+constexpr std::array<int, HallReverb::kNumInputAP> HallReverb::kInputAPDelays;
 constexpr int HallReverb::kModPhaseIdx[HallReverb::kNumLines];
 
 void HallReverb::Init(float sample_rate) {
@@ -59,11 +59,17 @@ void HallReverb::Init(float sample_rate) {
         input_ap_[i].coeff = diffusion_coeff_;
     }
 
+    pre_delay_line_.Init();
+    pre_delay_line_.SetDelay(pre_delay_samples_);
+
     float damp_freq = 8000.0f / sample_rate_;
     for (auto& d : damping_) {
         d.Init();
         d.SetFrequency(damp_freq);
     }
+
+    input_highcut_.Init();
+    input_highcut_.SetFrequency(10000.0f / sample_rate_);
 
     lfo_phase_[0] = 0.0f;
     lfo_phase_[1] = 1.57079632f;
@@ -76,6 +82,14 @@ void HallReverb::ProcessSample(float in_left, float in_right,
                                 float* out_left, float* out_right) {
     float input = (in_left + in_right) * 0.5f;
 
+    // Input high-cut filter
+    input = input_highcut_.Process(input);
+
+    // Pre-delay
+    pre_delay_line_.Write(input);
+    input = pre_delay_line_.Read();
+
+    // Input diffusion: 4 all-pass filters in series
     for (auto& ap : input_ap_)
         input = ap.Process(input);
 
@@ -122,10 +136,32 @@ void HallReverb::Clear() {
         fdn_delay[i]->Reset();
     for (auto& ap : input_ap_)
         ap.delay.Reset();
+    pre_delay_line_.Reset();
 }
 
 void HallReverb::SetDecay(float decay) {
     decay_ = (decay > 0.999f) ? 0.999f : ((decay < 0.0f) ? 0.0f : decay);
+}
+
+void HallReverb::SetDiffusion(float diffusion) {
+    diffusion_coeff_ = diffusion * 0.7f;
+    for (auto& ap : input_ap_) ap.coeff = diffusion_coeff_;
+}
+
+void HallReverb::SetPreDelay(float pre_delay) {
+    pre_delay_samples_ = pre_delay * sample_rate_;
+    if (pre_delay_samples_ > static_cast<float>(kMaxPreDelay - 1))
+        pre_delay_samples_ = static_cast<float>(kMaxPreDelay - 1);
+    if (pre_delay_samples_ < 0.0f)
+        pre_delay_samples_ = 0.0f;
+    pre_delay_line_.SetDelay(pre_delay_samples_);
+}
+
+void HallReverb::SetInputHighCut(float freq) {
+    float nf = freq / sample_rate_;
+    if (nf > 0.497f) nf = 0.497f;
+    if (nf < 0.001f) nf = 0.001f;
+    input_highcut_.SetFrequency(nf);
 }
 
 void HallReverb::SetTankHighCut(float freq) {
@@ -133,6 +169,18 @@ void HallReverb::SetTankHighCut(float freq) {
     if (nf > 0.497f) nf = 0.497f;
     if (nf < 0.001f) nf = 0.001f;
     for (auto& d : damping_) d.SetFrequency(nf);
+}
+
+void HallReverb::SetTankModSpeed(float speed) {
+    if (speed < 0.01f) speed = 0.01f;
+    if (speed > 10.0f) speed = 10.0f;
+    lfo_phase_inc_ = 6.28318530f * speed / sample_rate_;
+}
+
+void HallReverb::SetTankModDepth(float depth) {
+    if (depth < 0.0f) depth = 0.0f;
+    if (depth > 20.0f) depth = 20.0f;
+    mod_depth_ = depth * 0.2f; // Scale to 0-4 samples range
 }
 
 void HallReverb::hadamardTransform(float* x) {

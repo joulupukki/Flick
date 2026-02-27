@@ -1348,7 +1348,11 @@ int main() {
   // Initialize Hall Reverb (FDN)
   hall_reverb.Init(hw.AudioSampleRate());
   hall_reverb.SetDecay(0.85f);
+  hall_reverb.SetDiffusion(0.7f);
+  hall_reverb.SetInputHighCut(10000.0f);
   hall_reverb.SetTankHighCut(8000.0f);
+  hall_reverb.SetTankModSpeed(0.5f);
+  hall_reverb.SetTankModDepth(1.5f);
 
   // Initialize Spring Reverb (Digital Waveguide)
   spring_reverb.Init(hw.AudioSampleRate());

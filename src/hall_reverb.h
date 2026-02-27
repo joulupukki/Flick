@@ -40,13 +40,19 @@ public:
     void Clear() override;
 
     void SetDecay(float decay) override;
+    void SetDiffusion(float diffusion) override;
+    void SetPreDelay(float pre_delay) override;
+    void SetInputHighCut(float freq) override;
     void SetTankHighCut(float freq) override;
+    void SetTankModSpeed(float speed) override;
+    void SetTankModDepth(float depth) override;
 
 private:
     static constexpr int kNumLines = 8;
-    static constexpr int kNumInputAP = 2;
+    static constexpr int kNumInputAP = 4;
     static constexpr int kMaxLineDelay = 4800;
     static constexpr int kMaxAPDelay = 512;
+    static constexpr int kMaxPreDelay = 12000; // 250ms at 48kHz
     static constexpr float kHadamardNorm = 0.35355339f;
 
     static constexpr std::array<int, kNumLines> kLineDelays = {
@@ -54,7 +60,7 @@ private:
     };
 
     static constexpr std::array<int, kNumInputAP> kInputAPDelays = {
-        142, 379
+        142, 107, 379, 277
     };
 
     // Bitmask: lines 0, 2, 5, 7 get LFO modulation
@@ -75,14 +81,27 @@ private:
         }
     };
 
+    // Pre-delay buffer
+    daisysp::DelayLine<float, kMaxPreDelay> pre_delay_line_;
+
+    // Input diffusion
     std::array<AllPassFilter, kNumInputAP> input_ap_;
+
+    // Per-line damping filters
     std::array<daisysp::OnePole, kNumLines> damping_;
 
+    // Input high-cut filter
+    daisysp::OnePole input_highcut_;
+
+    // LFO state
     float lfo_phase_[4] = {};
     float lfo_phase_inc_ = 0.f;
     float mod_depth_ = 1.5f;
+
+    // Parameters
     float decay_ = 0.85f;
     float diffusion_coeff_ = 0.5f;
+    float pre_delay_samples_ = 0.f;
 
     static void hadamardTransform(float* x);
 };
