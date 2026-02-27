@@ -16,99 +16,94 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Based on Schroeder reverb algorithm
+// 8-line Feedback Delay Network (FDN) hall reverb with Hadamard mixing matrix.
+// Uses prime-length delay lines, input diffusion, per-line damping, and LFO
+// modulation for dense, smooth, stereo hall reverb.
 
 #ifndef HALL_REVERB_HPP
 #define HALL_REVERB_HPP
 
 #include "daisysp.h"
+#include "reverb_effect.h"
 #include <array>
 
 namespace flick {
 
-class HallReverb {
+class HallReverb : public ReverbEffect {
 public:
     HallReverb() = default;
-    ~HallReverb() = default;
+    ~HallReverb() override = default;
 
-    void Init(float sample_rate, size_t max_delay = 4000); // ~83ms at 48kHz
+    void Init(float sample_rate) override;
+    void ProcessSample(float in_left, float in_right,
+                       float* out_left, float* out_right) override;
+    void Clear() override;
 
-    void Process(const float* in_left, const float* in_right,
-                 float* out_left, float* out_right, size_t size);
-
-    void ProcessSample(float in_left, float in_right, float* out_left, float* out_right);
-
-    void SetFeedback(float feedback) { feedback_ = feedback; }
-    void SetDryWet(float dry_wet) { dry_wet_ = dry_wet; }
-    void SetLpFreq(float freq) { lp_freq_ = freq; }
+    void SetDecay(float decay) override;
+    void SetDiffusion(float diffusion) override;
+    void SetPreDelay(float pre_delay) override;
+    void SetInputHighCut(float freq) override;
+    void SetTankHighCut(float freq) override;
+    void SetTankModSpeed(float speed) override;
+    void SetTankModDepth(float depth) override;
 
 private:
-    static constexpr int kNumCombFilters = 4;
-    static constexpr int kNumAllPassFilters = 2;
+    static constexpr int kNumLines = 8;
+    static constexpr int kNumInputAP = 4;
+    static constexpr int kMaxLineDelay = 4800;
+    static constexpr int kMaxAPDelay = 512;
+    static constexpr int kMaxPreDelay = 12000; // 250ms at 48kHz
+    static constexpr float kHadamardNorm = 0.35355339f;
 
-    // Comb filter delays in samples (for 48kHz) - longer for hall reverb
-    static constexpr std::array<int, kNumCombFilters> kCombDelays = {
-        2400,  // ~50ms
-        2688,  // ~56ms
-        2928,  // ~61ms
-        3264   // ~68ms
+    static constexpr std::array<int, kNumLines> kLineDelays = {
+        1087, 1283, 1601, 1949, 2311, 2801, 3371, 4409
     };
 
-    // All-pass filter delays
-    static constexpr std::array<int, kNumAllPassFilters> kAllPassDelays = {
-        225,   // ~5ms
-        341    // ~7ms
+    static constexpr std::array<int, kNumInputAP> kInputAPDelays = {
+        142, 107, 379, 277
     };
 
-    struct CombFilter {
-        daisysp::DelayLine<float, 4000> delay;
-        float feedback;
-        float damp;
-        float damp_prev;
-        daisysp::OnePole lp_filter;
-
-        void Init(float sample_rate, float lp_freq) {
-            delay.Init();
-            lp_filter.Init();
-            lp_filter.SetFrequency(lp_freq);
-            feedback = 0.0f;
-            damp = 0.0f;
-            damp_prev = 0.0f;
-        }
-
-        float Process(float in) {
-            float read = delay.Read();
-            float filtered = lp_filter.Process(read * (1.0f - damp) + read * damp * damp_prev);
-            damp_prev = filtered;
-            delay.Write(in + filtered * feedback);
-            return filtered;
-        }
-    };
+    // Bitmask: lines 0, 2, 5, 7 get LFO modulation
+    static constexpr uint8_t kModMask = 0xA5; // 10100101
+    // Maps line index to LFO phase index (-1 = not modulated)
+    static constexpr int kModPhaseIdx[kNumLines] = {0, -1, 1, -1, -1, 2, -1, 3};
 
     struct AllPassFilter {
-        daisysp::DelayLine<float, 500> delay;
-        float feedback;
+        daisysp::DelayLine<float, kMaxAPDelay> delay;
+        float coeff = 0.5f;
 
-        void Init() {
-            delay.Init();
-            feedback = 0.0f;
-        }
+        void Init() { delay.Init(); coeff = 0.5f; }
 
         float Process(float in) {
             float read = delay.Read();
-            float out = -in + read;
-            delay.Write(in + read * feedback);
-            return out;
+            delay.Write(in + read * coeff);
+            return -in * coeff + read;
         }
     };
 
-    std::array<CombFilter, kNumCombFilters> comb_filters_;
-    std::array<AllPassFilter, kNumAllPassFilters> allpass_filters_;
+    // Pre-delay buffer
+    daisysp::DelayLine<float, kMaxPreDelay> pre_delay_line_;
 
-    float feedback_ = 0.85f;
-    float dry_wet_ = 1.0f;
-    float lp_freq_ = 12000.0f;
-    float sample_rate_ = 48000.0f;
+    // Input diffusion
+    std::array<AllPassFilter, kNumInputAP> input_ap_;
+
+    // Per-line damping filters
+    std::array<daisysp::OnePole, kNumLines> damping_;
+
+    // Input high-cut filter
+    daisysp::OnePole input_highcut_;
+
+    // LFO state
+    float lfo_phase_[4] = {};
+    float lfo_phase_inc_ = 0.f;
+    float mod_depth_ = 1.5f;
+
+    // Parameters
+    float decay_ = 0.85f;
+    float diffusion_coeff_ = 0.5f;
+    float pre_delay_samples_ = 0.f;
+
+    static void hadamardTransform(float* x);
 };
 
 } // namespace flick
