@@ -18,81 +18,141 @@
 
 #include "hall_reverb.h"
 
+#ifndef DSY_SDRAM_BSS
+#define DSY_SDRAM_BSS __attribute__((section(".sdram_bss")))
+#endif
+
+using daisysp::DelayLine;
+
+// FDN delay line buffers in SDRAM (8 x 4800 samples = ~150KB)
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_0;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_1;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_2;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_3;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_4;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_5;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_6;
+DelayLine<float, 4800> DSY_SDRAM_BSS fdn_delay_mem_7;
+
+static DelayLine<float, 4800>* fdn_delay[8] = {
+    &fdn_delay_mem_0, &fdn_delay_mem_1, &fdn_delay_mem_2, &fdn_delay_mem_3,
+    &fdn_delay_mem_4, &fdn_delay_mem_5, &fdn_delay_mem_6, &fdn_delay_mem_7
+};
+
 namespace flick {
 
-// Define the static constants
-constexpr std::array<int, HallReverb::kNumCombFilters> HallReverb::kCombDelays;
-constexpr std::array<int, HallReverb::kNumAllPassFilters> HallReverb::kAllPassDelays;
+constexpr std::array<int, HallReverb::kNumLines> HallReverb::kLineDelays;
+constexpr std::array<int, 2> HallReverb::kInputAPDelays;
+constexpr int HallReverb::kModPhaseIdx[HallReverb::kNumLines];
 
 void HallReverb::Init(float sample_rate) {
     sample_rate_ = sample_rate;
 
-    // Initialize comb filters
-    for (auto& comb : comb_filters_) {
-        comb.Init(sample_rate, lp_freq_);
-        comb.feedback = feedback_;
-        comb.damp = 0.5f; // Moderate damping
+    for (int i = 0; i < kNumLines; ++i) {
+        fdn_delay[i]->Init();
+        fdn_delay[i]->SetDelay(static_cast<float>(kLineDelays[i]));
     }
 
-    // Set comb filter delays
-    for (size_t i = 0; i < kNumCombFilters; ++i) {
-        comb_filters_[i].delay.SetDelay(static_cast<float>(kCombDelays[i]));
+    for (int i = 0; i < kNumInputAP; ++i) {
+        input_ap_[i].Init();
+        input_ap_[i].delay.SetDelay(static_cast<float>(kInputAPDelays[i]));
+        input_ap_[i].coeff = diffusion_coeff_;
     }
 
-    // Initialize all-pass filters
-    for (auto& ap : allpass_filters_) {
-        ap.Init();
-        ap.feedback = 0.7f; // Standard all-pass feedback
+    float damp_freq = 8000.0f / sample_rate_;
+    for (auto& d : damping_) {
+        d.Init();
+        d.SetFrequency(damp_freq);
     }
 
-    // Set all-pass delays
-    for (size_t i = 0; i < kNumAllPassFilters; ++i) {
-        allpass_filters_[i].delay.SetDelay(static_cast<float>(kAllPassDelays[i]));
+    lfo_phase_[0] = 0.0f;
+    lfo_phase_[1] = 1.57079632f;
+    lfo_phase_[2] = 3.14159265f;
+    lfo_phase_[3] = 4.71238898f;
+    lfo_phase_inc_ = 3.14159265f / sample_rate_; // 0.5 Hz default
+}
+
+void HallReverb::ProcessSample(float in_left, float in_right,
+                                float* out_left, float* out_right) {
+    float input = (in_left + in_right) * 0.5f;
+
+    for (auto& ap : input_ap_)
+        input = ap.Process(input);
+
+    float in_scaled = input * kHadamardNorm;
+
+    // Read FDN delay line outputs
+    float out[kNumLines];
+    for (int i = 0; i < kNumLines; ++i) {
+        if ((kModMask & (1 << i)) && mod_depth_ > 0.0f) {
+            // Triangle wave LFO: phase 0..2pi → output -1..1
+            float p = lfo_phase_[kModPhaseIdx[i]] * (1.0f / 3.14159265f);
+            float tri = (p < 1.0f) ? (2.0f * p - 1.0f) : (3.0f - 2.0f * p);
+            float md = static_cast<float>(kLineDelays[i]) + tri * mod_depth_;
+            if (md < 1.0f) md = 1.0f;
+            out[i] = fdn_delay[i]->Read(md);
+        } else {
+            out[i] = fdn_delay[i]->Read();
+        }
     }
+
+    // Hadamard mix
+    float mx[kNumLines];
+    for (int i = 0; i < kNumLines; ++i) mx[i] = out[i];
+    hadamardTransform(mx);
+
+    // Damp, decay, write
+    for (int i = 0; i < kNumLines; ++i)
+        fdn_delay[i]->Write(damping_[i].Process(mx[i]) * decay_ + in_scaled);
+
+    // LFO advance
+    for (int m = 0; m < 4; ++m) {
+        lfo_phase_[m] += lfo_phase_inc_;
+        if (lfo_phase_[m] >= 6.28318530f)
+            lfo_phase_[m] -= 6.28318530f;
+    }
+
+    // Stereo taps with alternating polarity
+    *out_left  = (out[0] - out[2] + out[4] - out[6]) * 0.5f;
+    *out_right = (out[1] - out[3] + out[5] - out[7]) * 0.5f;
 }
 
 void HallReverb::Clear() {
-    // Reset all delay line buffers to silence
-    for (auto& comb : comb_filters_) {
-        comb.delay.Reset();
-        comb.damp_prev = 0.0f;
-    }
-    for (auto& ap : allpass_filters_) {
+    for (int i = 0; i < kNumLines; ++i)
+        fdn_delay[i]->Reset();
+    for (auto& ap : input_ap_)
         ap.delay.Reset();
-    }
 }
 
-void HallReverb::Process(const float* in_left, const float* in_right,
-                         float* out_left, float* out_right, size_t size) {
-    for (size_t i = 0; i < size; ++i) {
-        ProcessSample(in_left[i], in_right[i], &out_left[i], &out_right[i]);
-    }
+void HallReverb::SetDecay(float decay) {
+    decay_ = (decay > 0.999f) ? 0.999f : ((decay < 0.0f) ? 0.0f : decay);
 }
 
-void HallReverb::ProcessSample(float in_left, float in_right, float* out_left, float* out_right) {
-    // Mix left and right input for mono processing
-    float mono_in = (in_left + in_right) * 0.5f;
+void HallReverb::SetTankHighCut(float freq) {
+    float nf = freq / sample_rate_;
+    if (nf > 0.497f) nf = 0.497f;
+    if (nf < 0.001f) nf = 0.001f;
+    for (auto& d : damping_) d.SetFrequency(nf);
+}
 
-    // Process through comb filters
-    float comb_out = 0.0f;
-    for (auto& comb : comb_filters_) {
-        comb_out += comb.Process(mono_in);
+void HallReverb::hadamardTransform(float* x) {
+    float a, b;
+    for (int i = 0; i < 8; i += 2) {
+        a = x[i]; b = x[i+1];
+        x[i] = a + b; x[i+1] = a - b;
     }
-    comb_out /= kNumCombFilters; // Average the comb outputs
-
-    // Process through all-pass filters in series
-    float reverb_out = comb_out;
-    for (auto& ap : allpass_filters_) {
-        reverb_out = ap.Process(reverb_out);
+    for (int i = 0; i < 8; i += 4) {
+        a = x[i]; b = x[i+2];
+        x[i] = a + b; x[i+2] = a - b;
+        a = x[i+1]; b = x[i+3];
+        x[i+1] = a + b; x[i+3] = a - b;
     }
-
-    // Apply dry/wet mix
-    float dry = mono_in * (1.0f - dry_wet_);
-    float wet = reverb_out * dry_wet_;
-
-    // Output to both channels
-    *out_left = dry + wet;
-    *out_right = dry + wet;
+    for (int i = 0; i < 4; ++i) {
+        a = x[i]; b = x[i+4];
+        x[i] = a + b; x[i+4] = a - b;
+    }
+    for (int i = 0; i < 8; ++i)
+        x[i] *= kHadamardNorm;
 }
 
 } // namespace flick

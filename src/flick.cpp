@@ -369,7 +369,7 @@ DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
 // current_reverb points to whichever reverb is active (plate/hall/spring)
 ReverbEffect* current_reverb = nullptr;
 PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
-HallReverb hall_reverb;      // Schroeder algorithm (spacious)
+HallReverb hall_reverb;      // FDN algorithm (spacious)
 SpringReverb spring_reverb;  // Digital waveguide (vintage character)
 
 // Tremolo effects (polymorphic - switch at runtime)
@@ -1201,13 +1201,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     // Process reverb via polymorphic interface
     current_reverb->ProcessSample(left_input * gain, right_input * gain, &rev_l, &rev_r);
 
-    // Apply algorithm-specific gain adjustments
-    if (reverb.current_type == REVERB_HALL) {
-      // Make hall reverb louder to match the mix knob expectations
-      rev_l *= 4.0f;
-      rev_r *= 4.0f;
-    }
-
     if (!bypass.reverb) {
       // left_output = ((left_input * reverb.dry * 0.1) + (verb.getLeftOutput() * reverb.wet * clearPopCancelValue));
       // right_output = ((right_input * reverb.dry * 0.1) + (verb.getRightOutput() * reverb.wet * clearPopCancelValue));
@@ -1352,9 +1345,10 @@ int main() {
   plate_reverb.Init(hw.AudioSampleRate());
   updatePlateReverbParameters();
 
-  // Initialize Hall Reverb (Schroeder)
+  // Initialize Hall Reverb (FDN)
   hall_reverb.Init(hw.AudioSampleRate());
-  hall_reverb.SetDecay(0.95f); // Higher feedback for longer hall decay
+  hall_reverb.SetDecay(0.85f);
+  hall_reverb.SetTankHighCut(8000.0f);
 
   // Initialize Spring Reverb (Digital Waveguide)
   spring_reverb.Init(hw.AudioSampleRate());
