@@ -47,10 +47,13 @@ PlateReverb::PlateReverb()
 void PlateReverb::Init(float sample_rate) {
   sample_rate_ = sample_rate;
   verb_.setSampleRate(sample_rate);
+  verb_.setTimeScale(1.007500);
+  verb_.enableInputDiffusion(true);
 
-  // Set low-cut filters (fixed values from flick.cpp)
-  verb_.setInputFilterLowCutoffPitch(2.87f * PLATE_DAMP_SCALE);  // ~100Hz
-  verb_.setTankFilterLowCutFrequency(2.87f * PLATE_DAMP_SCALE);  // ~100Hz
+  // Set low-cut filters (pitch-based: 440 * 2^(pitch - 5))
+  // pitch = 2.87 -> 440 * 2^(-2.13) ≈ 100Hz
+  verb_.setInputFilterLowCutoffPitch(2.87f);
+  verb_.setTankFilterLowCutFrequency(2.87f);
 
   // Apply all current parameters
   updateDattorroParameters();
