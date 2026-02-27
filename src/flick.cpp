@@ -93,33 +93,23 @@ using daisy::System;
 using daisysp::DelayLine;
 using daisysp::fonepole;
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 /// Increment this when changing the settings struct so the software will know
 /// to reset to defaults if this ever changes.
 #define SETTINGS_VERSION 8
 
-Funbox hw;
-
-// Audio config constants
+// Audio configuration
 constexpr float SAMPLE_RATE = 48000.0f;
 constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 
-// Tremolo constants
-constexpr float TREMOLO_SPEED_MIN = 0.2f;   // Minimum tremolo speed in Hz
-constexpr float TREMOLO_SPEED_MAX = 16.0f;  // Maximum tremolo speed in Hz
-constexpr float TREMOLO_DEPTH_SCALE = 1.0f; // Scale factor for tremolo depth
-constexpr float TREMOLO_LED_BRIGHTNESS = 0.4f; // LED brightness when only tremolo is active
-
-// Delay constants
-constexpr float DELAY_TIME_MIN_SECONDS = 0.05f;
-constexpr float DELAY_WET_MIX_ATTENUATION = 0.333f; // Attenuation for wet delay signal
-constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet percentage
-
-// Tap tempo constants
-constexpr uint32_t TAP_TEMPO_TIMEOUT_MS = 4000;  // Auto-exit after 4 seconds of no taps
-constexpr int TAP_FLASH_CALLBACKS = 300;          // ~50ms LED flash at 6000 callbacks/sec
+// Filter frequency constants (notch filters always active)
+constexpr float NOTCH_1_FREQ = 6020.0f;   // Daisy Seed resonance notch
+constexpr float NOTCH_2_FREQ = 12278.0f;  // Daisy Seed resonance notch
 
 // Reverb constants (Dattorro plate reverb scaling)
-
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
 constexpr float PLATE_DAMP_SCALE = 10.0f;
 
@@ -130,48 +120,152 @@ constexpr float PLATE_TANK_MOD_SHAPE_VALUES[] = {0.5f, 0.25f, 0.1f};
 constexpr float PLATE_TANK_MOD_SPEED_SCALE = 8.0f;  // Multiplier for tank modulation speed
 constexpr float PLATE_TANK_MOD_DEPTH_SCALE = 15.0f; // Multiplier for tank modulation depth
 
-// Filter Frequency constants
-constexpr float NOTCH_1_FREQ = 6020.0f; // Daisy Seed resonance notch
-constexpr float NOTCH_2_FREQ = 12278.0f; // Daisy Seed resonance notch
+// Tremolo constants
+constexpr float TREMOLO_SPEED_MIN = 0.2f;              // Minimum tremolo speed in Hz
+constexpr float TREMOLO_SPEED_MAX = 16.0f;             // Maximum tremolo speed in Hz
+constexpr float TREMOLO_DEPTH_SCALE = 1.0f;            // Scale factor for tremolo depth
+constexpr float TREMOLO_LED_BRIGHTNESS = 0.4f;         // LED brightness when only tremolo is active
 
-// Harmonic tremolo state (filter cutoffs taken from Fender 6G12-A schematic)
+// Harmonic tremolo filter cutoffs (taken from Fender 6G12-A schematic)
 constexpr float HARMONIC_TREMOLO_LPF_CUTOFF = 144.0f; // 220K and 5nF LPF
 constexpr float HARMONIC_TREMOLO_HPF_CUTOFF = 636.0f; // 1M and 250pF HPF
 
-// EQ-Shaping EQ Filters for Harmonic Tremolo
+// EQ-shaping filters for harmonic tremolo
 constexpr float HARMONIC_TREM_EQ_HPF1_CUTOFF = 63.0f;
 constexpr float HARMONIC_TREM_EQ_LPF1_CUTOFF = 11200.0f;
 constexpr float HARMONIC_TREM_EQ_PEAK1_FREQ = 7500.0f;
 constexpr float HARMONIC_TREM_EQ_PEAK1_GAIN = -3.37f; // in dB
 constexpr float HARMONIC_TREM_EQ_PEAK1_Q = 0.263f;
 constexpr float HARMONIC_TREM_EQ_PEAK2_FREQ = 254.0f;
-constexpr float HARMONIC_TREM_EQ_PEAK2_GAIN = 2.0f; // in dBz
+constexpr float HARMONIC_TREM_EQ_PEAK2_GAIN = 2.0f; // in dB
 constexpr float HARMONIC_TREM_EQ_PEAK2_Q = 0.707f;
 constexpr float HARMONIC_TREM_EQ_LOW_SHELF_FREQ = 37.0f;
 constexpr float HARMONIC_TREM_EQ_LOW_SHELF_GAIN = -10.5f; // in dB
-constexpr float HARMONIC_TREM_EQ_LOW_SHELF_Q = 1.0f; // Shelf slope
+constexpr float HARMONIC_TREM_EQ_LOW_SHELF_Q = 1.0f;      // Shelf slope
 
+// Delay constants
+constexpr float DELAY_TIME_MIN_SECONDS = 0.05f;
+constexpr float DELAY_WET_MIX_ATTENUATION = 0.333f; // Attenuation for wet delay signal
+constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet percentage
+
+// Tap tempo constants
+constexpr uint32_t TAP_TEMPO_TIMEOUT_MS = 4000; // Auto-exit after 4 seconds of no taps
+constexpr int TAP_FLASH_CALLBACKS = 300;         // ~50ms LED flash at 6000 callbacks/sec
+
+// Audio signal levels
+constexpr float MINUS_18DB_GAIN = 0.12589254f;
+constexpr float MINUS_20DB_GAIN = 0.1f;
+
+// ============================================================================
+// ENUMS AND SWITCH MAPPINGS
+// ============================================================================
+// Toggle switch orientation note: Hothouse = vertical UP/DOWN, Funbox = horizontal LEFT/RIGHT
+// Logical positions: index 0 = UP/RIGHT, index 1 = MIDDLE, index 2 = DOWN/LEFT
+
+// Pedal operational modes
 enum PedalMode {
   PEDAL_MODE_NORMAL,
-  PEDAL_MODE_EDIT_REVERB,     // Edit mode activated by double-press of the left foot switch
-  PEDAL_MODE_EDIT_DEVICE_SETTINGS, // Edit mode activated by long-press of the right foot switch
-  PEDAL_MODE_TAP_TEMPO        // Tap tempo mode activated by double-press of the left foot switch
+  PEDAL_MODE_EDIT_REVERB,           // Activated by long-press of left footswitch
+  PEDAL_MODE_EDIT_DEVICE_SETTINGS,  // Activated by long-press of right footswitch
+  PEDAL_MODE_TAP_TEMPO              // Activated by double-press of left footswitch
 };
 
-enum MonoStereoMode {                       // Controlled by Toggle Switch 3
+// Mono/Stereo I/O mode (Toggle Switch 3 in device settings)
+enum MonoStereoMode {
   MS_MODE_MIMO, // Mono In, Mono Out        // TOGGLESWITCH_LEFT
   MS_MODE_MISO, // Mono In, Stereo Out      // TOGGLESWITCH_MIDDLE
   MS_MODE_SISO, // Stereo In, Stereo Out    // TOGGLESWITCH_RIGHT
 };
 
+constexpr MonoStereoMode kMonoStereoMap[] = {
+  MS_MODE_SISO,  // UP (Hothouse) / RIGHT (Funbox)
+  MS_MODE_MISO,  // MIDDLE
+  MS_MODE_MIMO,  // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+// Reverb algorithm selection (Toggle Switch 1 in normal mode)
 enum ReverbType {
   REVERB_PLATE,
   REVERB_SPRING,
   REVERB_HALL,
-  REVERB_DEFAULT = REVERB_PLATE  // For the 4th combination
+  REVERB_DEFAULT = REVERB_PLATE
 };
 
-// Persistent Settings
+constexpr ReverbType kReverbTypeMap[] = {
+  REVERB_SPRING,  // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_PLATE,   // MIDDLE
+  REVERB_HALL,    // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+// Reverb dry/wet knob behavior (Toggle Switch 1 in device settings)
+enum ReverbKnobMode {
+  REVERB_KNOB_ALL_DRY,
+  REVERB_KNOB_DRY_WET_MIX,
+  REVERB_KNOB_ALL_WET,
+};
+
+constexpr ReverbKnobMode kReverbKnobMap[] = {
+  REVERB_KNOB_ALL_DRY,     // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_KNOB_DRY_WET_MIX, // MIDDLE
+  REVERB_KNOB_ALL_WET,      // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+// Tremolo algorithm selection (Toggle Switch 2 in normal mode)
+enum TremoloMode {
+  TREMOLO_SINE,      // Sine wave tremolo (LEFT)
+  TREMOLO_HARMONIC,  // Harmonic tremolo (MIDDLE)
+  TREMOLO_SQUARE,    // Opto/Square wave tremolo (RIGHT)
+};
+
+constexpr TremoloMode kTremoloModeMap[] = {
+  TREMOLO_SQUARE,    // UP (Hothouse) / RIGHT (Funbox)
+  TREMOLO_HARMONIC,  // MIDDLE
+  TREMOLO_SINE,      // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+// Makeup gain for delay/tremolo interaction
+enum TremDelMakeUpGain {
+  MAKEUP_GAIN_NONE,
+  MAKEUP_GAIN_NORMAL,
+};
+
+// Delay timing subdivision (Toggle Switch 3 in normal mode)
+enum DelayTimingMode {
+  DELAY_TIMING_DOTTED_EIGHTH,  // 3/4 of knob value
+  DELAY_TIMING_QUARTER,        // 1x knob value (straight)
+  DELAY_TIMING_TRIPLET,        // 1/3 of knob value (3 echoes per beat)
+};
+
+constexpr DelayTimingMode kDelayTimingMap[] = {
+  DELAY_TIMING_DOTTED_EIGHTH,  // UP (Hothouse) / RIGHT (Funbox)
+  DELAY_TIMING_QUARTER,        // MIDDLE
+  DELAY_TIMING_TRIPLET,        // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+constexpr float kDelayTimingMultiplier[] = {
+  0.75f,    // DELAY_TIMING_DOTTED_EIGHTH (index 0)
+  1.0f,     // DELAY_TIMING_QUARTER (index 1)
+  0.6666f,  // DELAY_TIMING_TRIPLET (index 2, 2/3 — quarter note triplets)
+};
+
+// Phase inversion mode (Toggle Switch 2 in device settings)
+enum PolarityMode {
+  POLARITY_INVERT_RIGHT,
+  POLARITY_NORMAL,
+  POLARITY_INVERT_LEFT,
+};
+
+constexpr PolarityMode kPolarityMap[] = {
+  POLARITY_INVERT_RIGHT,  // UP (Hothouse) / RIGHT (Funbox)
+  POLARITY_NORMAL,        // MIDDLE
+  POLARITY_INVERT_LEFT,   // DOWN (Hothouse) / LEFT (Funbox)
+};
+
+// ============================================================================
+// STRUCTS
+// ============================================================================
+
+// Persistent settings stored in QSPI flash
 struct Settings {
   int version; // Version of the settings struct
   float decay;
@@ -190,9 +284,9 @@ struct Settings {
   bool bypass_delay;
   float tapped_delay_samples; // Persisted tap tempo delay time in samples (0 = use knob)
 
-	//Overloading the != operator
-	//This is necessary as this operator is used in the PersistentStorage source code
-	bool operator!=(const Settings& a) const {
+  // Overloading the != operator
+  // This is necessary as this operator is used in the PersistentStorage source code
+  bool operator!=(const Settings& a) const {
     return !(
       a.version == version &&
       a.decay == decay &&
@@ -214,179 +308,15 @@ struct Settings {
   }
 };
 
-//Persistent Storage Declaration. Using type Settings and passed the devices qspi handle
-PersistentStorage<Settings> SavedSettings(hw.seed.qspi);
+// Effect bypass states grouped into a single struct
+struct BypassState {
+  bool reverb  = true;
+  bool tremolo = true;
+  bool delay   = true;
+};
 
 // ============================================================================
-// Effect Instances - Hardware-Independent DSP Modules
-// ============================================================================
-
-// SDRAM delay buffers (externally allocated, passed to DelayEffect)
-DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemL;
-DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
-
-// Reverb effects (polymorphic - algorithm selected at runtime via toggle switch)
-// current_reverb points to whichever reverb is active (plate/hall/spring)
-ReverbEffect* current_reverb = nullptr;
-PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
-HallReverb hall_reverb;      // Schroeder algorithm (spacious)
-SpringReverb spring_reverb;  // Digital waveguide (vintage character)
-PedalMode pedal_mode = PEDAL_MODE_NORMAL;
-MonoStereoMode mono_stereo_mode = MS_MODE_MIMO;
-
-Parameter p_verb_amt;
-Parameter p_trem_speed, p_trem_depth;
-Parameter p_delay_time, p_delay_feedback, p_delay_amt;
-
-Parameter p_knob_1, p_knob_2, p_knob_3, p_knob_4, p_knob_5, p_knob_6;
-
-// Reverb edit mode parameter captures
-KnobCapture p_knob_2_capture(p_knob_2);
-KnobCapture p_knob_3_capture(p_knob_3);
-KnobCapture p_knob_4_capture(p_knob_4);
-KnobCapture p_knob_5_capture(p_knob_5);
-KnobCapture p_knob_6_capture(p_knob_6);
-SwitchCapture p_sw1_capture(hw, Funbox::TOGGLESWITCH_1);
-SwitchCapture p_sw2_capture(hw, Funbox::TOGGLESWITCH_2);
-SwitchCapture p_sw3_capture(hw, Funbox::TOGGLESWITCH_3);
-
-// ============================================================================
-// Tap Tempo State Management
-// ============================================================================
-// All tap tempo related state grouped into a single structure for clarity.
-// This includes timing data, tempo calculation, knob override detection,
-// and UI feedback (LED flash counter).
-
-struct TapTempoState {
-  uint32_t tap_timestamps[3] = {0, 0, 0};  // Last 3 tap timestamps for averaging
-  int tap_count = 0;                       // Number of taps recorded (0-3)
-  float tapped_delay_samples = 0.0f;      // Calculated delay time from taps (in samples)
-  float tapped_tempo_ms = 0.0f;           // Calculated tempo in milliseconds
-  uint32_t last_tap_time = 0;             // Timestamp of last tap (for timeout)
-  int tap_flash_counter = 0;              // LED flash animation counter
-  bool just_exited_tap_tempo = false;     // Flag to prevent spurious footswitch events on exit
-  float knob_baseline = -1.0f;            // Delay knob position when entering tap tempo mode
-                                          // (used to detect manual override)
-  KnobCapture delay_knob_capture;         // Soft takeover for delay knob in tap tempo mode
-
-  TapTempoState() : delay_knob_capture(p_knob_4) {}
-};
-
-TapTempoState tap_tempo;
-
-enum ReverbKnobMode {
-  REVERB_KNOB_ALL_DRY,
-  REVERB_KNOB_DRY_WET_MIX,
-  REVERB_KNOB_ALL_WET,
-};
-
-enum TremDelMakeUpGain {
-  MAKEUP_GAIN_NONE,
-  MAKEUP_GAIN_NORMAL,
-};
-
-enum TremoloMode {
-  TREMOLO_SINE,        // Sine wave tremolo (LEFT)
-  TREMOLO_HARMONIC,    // Harmonic tremolo (MIDDLE)
-  TREMOLO_SQUARE,      // Opto/Square wave tremolo (RIGHT)
-};
-
-
-// Toggle switch mappings (orientation: Hothouse vertical UP/DOWN, Funbox horizontal LEFT/RIGHT)
-constexpr ReverbKnobMode kReverbKnobMap[] = {
-  REVERB_KNOB_ALL_DRY,                         // UP (Hothouse) / RIGHT (Funbox)
-  REVERB_KNOB_DRY_WET_MIX,                     // MIDDLE
-  REVERB_KNOB_ALL_WET,                          // DOWN (Hothouse) / LEFT (Funbox)
-};
-
-constexpr TremoloMode kTremoloModeMap[] = {
-  TREMOLO_SQUARE,     // UP (Hothouse) / RIGHT (Funbox)
-  TREMOLO_HARMONIC,   // MIDDLE
-  TREMOLO_SINE,       // DOWN (Hothouse) / LEFT (Funbox)
-};
-
-enum DelayTimingMode {
-  DELAY_TIMING_DOTTED_EIGHTH,   // 3/4 of knob value
-  DELAY_TIMING_QUARTER,         // 1x knob value (straight)
-  DELAY_TIMING_TRIPLET,         // 1/3 of knob value (3 echoes per beat)
-};
-
-constexpr DelayTimingMode kDelayTimingMap[] = {
-  DELAY_TIMING_DOTTED_EIGHTH,   // UP (Hothouse) / RIGHT (Funbox)
-  DELAY_TIMING_QUARTER,         // MIDDLE
-  DELAY_TIMING_TRIPLET,         // DOWN (Hothouse) / LEFT (Funbox)
-};
-
-constexpr float kDelayTimingMultiplier[] = {
-  0.75f,    // DELAY_TIMING_DOTTED_EIGHTH (index 0)
-  1.0f,     // DELAY_TIMING_QUARTER (index 1)
-  0.3333f,  // DELAY_TIMING_TRIPLET (index 2, 1/3 — eighth note triplets)
-};
-
-enum PolarityMode {
-  POLARITY_INVERT_RIGHT,
-  POLARITY_NORMAL,
-  POLARITY_INVERT_LEFT,
-};
-
-constexpr PolarityMode kPolarityMap[] = {
-  POLARITY_INVERT_RIGHT,    // UP (Hothouse) / RIGHT (Funbox)
-  POLARITY_NORMAL,         // MIDDLE
-  POLARITY_INVERT_LEFT,   // DOWN (Hothouse) / LEFT (Funbox)
-};
-
-constexpr ReverbType kReverbTypeMap[] = {
-  REVERB_SPRING,   // UP (Hothouse) / RIGHT (Funbox)
-  REVERB_PLATE,    // MIDDLE
-  REVERB_HALL,     // DOWN (Hothouse) / LEFT (Funbox)
-};
-
-constexpr MonoStereoMode kMonoStereoMap[] = {
-  MS_MODE_SISO,    // UP (Hothouse) / RIGHT (Funbox)
-  MS_MODE_MISO,    // MIDDLE
-  MS_MODE_MIMO,    // DOWN (Hothouse) / LEFT (Funbox)
-};
-
-/// @brief Reverse-lookup: find the switch position (0/1/2) for a given value
-/// in a 3-element mapping array.
-template<typename T>
-int switchPosForValue(const T (&map)[3], T value) {
-  for (int i = 0; i < 3; i++) {
-    if (map[i] == value) return i;
-  }
-  return 1; // default to MIDDLE
-}
-
-PolarityMode polarity_mode = POLARITY_NORMAL;
-
-// Delay effect
-DelayEffect delay_effect;
-float delay_time_target = 0.0f;  // Track delay time for tap tempo extraction
-int delay_drywet;
-
-// Tremolo effects (polymorphic - switch at runtime)
-TremoloEffect* current_tremolo = nullptr;
-SineTremolo sine_tremolo;
-SquareTremolo square_tremolo;
-HarmonicTremolo harmonic_tremolo;
-
-// Bypass vars
-Led led_left, led_right;
-bool bypass_verb = true;
-bool bypass_trem = true;
-bool bypass_delay = true;
-
-// DFU mode trigger
-bool trigger_dfu_mode = false;
-
-// General Notch Filters to remove Daisy Seed resonant frequencies
-PeakingEQ notch1_L;
-PeakingEQ notch1_R;
-PeakingEQ notch2_L;
-PeakingEQ notch2_R;
-
-// ============================================================================
-// Reverb Orchestrator State
+// REVERB ORCHESTRATOR STATE
 // ============================================================================
 // The reverb effects (PlateReverb, HallReverb, SpringReverb) are DSP-only
 // modules with no knowledge of hardware. This orchestrator structure manages
@@ -418,36 +348,85 @@ struct ReverbOrchestrator {
   int plate_mod_shape_pos = 1;  // Position 1 = 0.25 (from PLATE_TANK_MOD_SHAPE_VALUES)
 };
 
+// ============================================================================
+// HARDWARE + PERSISTENT STORAGE
+// ============================================================================
+
+Funbox hw;
+
+// Persistent Storage Declaration. Using type Settings and passed the device's qspi handle
+PersistentStorage<Settings> SavedSettings(hw.seed.qspi);
+
+// ============================================================================
+// EFFECT INSTANCES — Hardware-Independent DSP Modules
+// ============================================================================
+
+// SDRAM delay buffers (externally allocated, passed to DelayEffect)
+DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemL;
+DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
+
+// Reverb effects (polymorphic - algorithm selected at runtime via toggle switch)
+// current_reverb points to whichever reverb is active (plate/hall/spring)
+ReverbEffect* current_reverb = nullptr;
+PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
+HallReverb hall_reverb;      // Schroeder algorithm (spacious)
+SpringReverb spring_reverb;  // Digital waveguide (vintage character)
+
+// Tremolo effects (polymorphic - switch at runtime)
+TremoloEffect* current_tremolo = nullptr;
+SineTremolo sine_tremolo;
+SquareTremolo square_tremolo;
+HarmonicTremolo harmonic_tremolo;
+
+// Delay effect
+DelayEffect delay_effect;
+
+// Notch filters to remove Daisy Seed resonant frequencies (always active)
+PeakingEQ notch1_L;
+PeakingEQ notch1_R;
+PeakingEQ notch2_L;
+PeakingEQ notch2_R;
+
+// ============================================================================
+// UI HARDWARE
+// ============================================================================
+
+Led led_left, led_right;
+
+// ============================================================================
+// GLOBAL STATE
+// ============================================================================
+
+// Operational modes
+PedalMode pedal_mode = PEDAL_MODE_NORMAL;
+MonoStereoMode mono_stereo_mode = MS_MODE_MIMO;
+PolarityMode polarity_mode = POLARITY_NORMAL;
+
+// Effect bypass states
+BypassState bypass;
+
+// Reverb orchestrator
 ReverbOrchestrator reverb;
 
-/**
- * @brief Updates plate reverb parameters (now encapsulated in PlateReverb class).
- * This function is kept for compatibility but delegates to PlateReverb setters.
- */
-void updatePlateReverbParameters() {
-  plate_reverb.SetDecay(reverb.plate_decay);
-  plate_reverb.SetDiffusion(reverb.plate_diffusion);
-  plate_reverb.SetInputHighCut(reverb.plate_input_damp_high);
-  plate_reverb.SetTankHighCut(reverb.plate_tank_damp_high);
-  plate_reverb.SetTankModSpeed(PLATE_TANK_MOD_SPEED_VALUES[reverb.plate_mod_speed_pos]);
-  plate_reverb.SetTankModDepth(PLATE_TANK_MOD_DEPTH_VALUES[reverb.plate_mod_depth_pos]);
-  plate_reverb.SetTankModShape(PLATE_TANK_MOD_SHAPE_VALUES[reverb.plate_mod_shape_pos]);
-  plate_reverb.SetPreDelay(reverb.plate_pre_delay);
-}
+// Delay state
+float delay_time_target = 0.0f;  // Track delay time for tap tempo extraction
+int delay_drywet;
 
-const float minus_18db_gain = 0.12589254;
-const float minus_20db_gain = 0.1;
+// Reverb mixing scale factors (updated when mono/stereo mode changes)
+float reverb_dry_scale_factor = 1.0f;
+float reverb_reverse_scale_factor = 1.0f;
 
-float left_input = 0.;
-float right_input = 0.;
-float left_output = 0.;
-float right_output = 0.;
-float reverb_dry_scale_factor = 1.0;
-float reverb_reverse_scale_factor = 1.0;
+// Audio signal temporaries (used in the per-sample loop in AudioCallback)
+float left_input = 0.f;
+float right_input = 0.f;
+float left_output = 0.f;
+float right_output = 0.f;
 
-float input_amplification = 1.0; // This isn't really used yet
+float input_amplification = 1.0f; // This isn't really used yet
 
+// Control flags for main loop
 bool trigger_settings_save = false;
+bool trigger_dfu_mode = false;
 
 /// @brief Used at startup to control a factory reset.
 ///
@@ -467,6 +446,81 @@ bool is_factory_reset_mode = false;
 /// 3: User must rotate knob_1 to 0% to complete the factory reset.
 int factory_reset_stage = 0;
 
+// ============================================================================
+// PARAMETER OBJECTS
+// ============================================================================
+
+Parameter p_verb_amt;
+Parameter p_trem_speed, p_trem_depth;
+Parameter p_delay_time, p_delay_feedback, p_delay_amt;
+
+// Raw knob parameters (0.0-1.0 linear) used in reverb edit mode
+Parameter p_knob_1, p_knob_2, p_knob_3, p_knob_4, p_knob_5, p_knob_6;
+
+// Reverb edit mode parameter captures (soft takeover)
+KnobCapture p_knob_2_capture(p_knob_2);
+KnobCapture p_knob_3_capture(p_knob_3);
+KnobCapture p_knob_4_capture(p_knob_4);
+KnobCapture p_knob_5_capture(p_knob_5);
+KnobCapture p_knob_6_capture(p_knob_6);
+SwitchCapture p_sw1_capture(hw, Funbox::TOGGLESWITCH_1);
+SwitchCapture p_sw2_capture(hw, Funbox::TOGGLESWITCH_2);
+SwitchCapture p_sw3_capture(hw, Funbox::TOGGLESWITCH_3);
+
+// ============================================================================
+// TAP TEMPO STATE
+// ============================================================================
+// TapTempoState is defined and instantiated here (after p_knob_4) because
+// the inline constructor references p_knob_4 in its member initializer list,
+// requiring p_knob_4 to be visible at the point of the struct definition.
+
+struct TapTempoState {
+  uint32_t tap_timestamps[3] = {0, 0, 0}; // Last 3 tap timestamps for averaging
+  int tap_count = 0;                       // Number of taps recorded (0-3)
+  float tapped_delay_samples = 0.0f;      // Calculated delay time from taps (in samples)
+  float tapped_tempo_ms = 0.0f;           // Calculated tempo in milliseconds
+  uint32_t last_tap_time = 0;             // Timestamp of last tap (for timeout)
+  int tap_flash_counter = 0;              // LED flash animation counter
+  bool just_exited_tap_tempo = false;     // Flag to prevent spurious footswitch events on exit
+  float knob_baseline = -1.0f;            // Delay knob position when entering tap tempo mode
+                                          // (used to detect manual override)
+  KnobCapture delay_knob_capture;         // Soft takeover for delay knob in tap tempo mode
+
+  TapTempoState() : delay_knob_capture(p_knob_4) {}
+};
+
+TapTempoState tap_tempo;
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/// @brief Reverse-lookup: find the switch position (0/1/2) for a given value
+/// in a 3-element mapping array.
+template<typename T>
+int switchPosForValue(const T (&map)[3], T value) {
+  for (int i = 0; i < 3; i++) {
+    if (map[i] == value) return i;
+  }
+  return 1; // default to MIDDLE
+}
+
+inline float hardLimit100_(const float &x) {
+  return (x > 1.) ? 1. : ((x < -1.) ? -1. : x);
+}
+
+void quickLedFlash() {
+  led_left.Set(1.0f);
+  led_right.Set(1.0f);
+  led_left.Update();
+  led_right.Update();
+  hw.DelayMs(500);
+}
+
+// ============================================================================
+// REVERB PARAMETER MANAGEMENT
+// ============================================================================
+
 inline void updateReverbScales(MonoStereoMode mode) {
   switch (mode) {
     case MS_MODE_MIMO:
@@ -481,10 +535,28 @@ inline void updateReverbScales(MonoStereoMode mode) {
   }
 }
 
-void loadSettings() {
+/**
+ * @brief Updates plate reverb parameters (now encapsulated in PlateReverb class).
+ * This function is kept for compatibility but delegates to PlateReverb setters.
+ */
+void updatePlateReverbParameters() {
+  plate_reverb.SetDecay(reverb.plate_decay);
+  plate_reverb.SetDiffusion(reverb.plate_diffusion);
+  plate_reverb.SetInputHighCut(reverb.plate_input_damp_high);
+  plate_reverb.SetTankHighCut(reverb.plate_tank_damp_high);
+  plate_reverb.SetTankModSpeed(PLATE_TANK_MOD_SPEED_VALUES[reverb.plate_mod_speed_pos]);
+  plate_reverb.SetTankModDepth(PLATE_TANK_MOD_DEPTH_VALUES[reverb.plate_mod_depth_pos]);
+  plate_reverb.SetTankModShape(PLATE_TANK_MOD_SHAPE_VALUES[reverb.plate_mod_shape_pos]);
+  plate_reverb.SetPreDelay(reverb.plate_pre_delay);
+}
 
-	// Reference to local copy of settings stored in flash
-	Settings &local_settings = SavedSettings.GetSettings();
+// ============================================================================
+// SETTINGS MANAGEMENT
+// ============================================================================
+
+void loadSettings() {
+  // Reference to local copy of settings stored in flash
+  Settings &local_settings = SavedSettings.GetSettings();
 
   int savedVersion = local_settings.version;
 
@@ -508,17 +580,17 @@ void loadSettings() {
   reverb.knob_mode = static_cast<ReverbKnobMode>(local_settings.reverb_knob_mode);
   updateReverbScales(mono_stereo_mode);
 
-  bypass_verb = local_settings.bypass_reverb;
-  bypass_trem = local_settings.bypass_tremolo;
-  bypass_delay = local_settings.bypass_delay;
+  bypass.reverb = local_settings.bypass_reverb;
+  bypass.tremolo = local_settings.bypass_tremolo;
+  bypass.delay = local_settings.bypass_delay;
   tap_tempo.tapped_delay_samples = local_settings.tapped_delay_samples;
 
   updatePlateReverbParameters();
 }
 
 void saveSettings() {
-	//Reference to local copy of settings stored in flash
-	Settings &local_settings = SavedSettings.GetSettings();
+  // Reference to local copy of settings stored in flash
+  Settings &local_settings = SavedSettings.GetSettings();
 
   local_settings.version = SETTINGS_VERSION;
   local_settings.decay = reverb.plate_decay;
@@ -530,15 +602,15 @@ void saveSettings() {
   local_settings.tank_mod_shape_pos = reverb.plate_mod_shape_pos;
   local_settings.pre_delay = reverb.plate_pre_delay;
 
-	trigger_settings_save = true;
+  trigger_settings_save = true;
 }
 
 void saveDeviceSettings() {
-  Settings &LocalSettings = SavedSettings.GetSettings();
+  Settings &local_settings = SavedSettings.GetSettings();
 
-  LocalSettings.mono_stereo_mode = mono_stereo_mode;
-  LocalSettings.polarity_mode = polarity_mode;
-  LocalSettings.reverb_knob_mode = reverb.knob_mode;
+  local_settings.mono_stereo_mode = mono_stereo_mode;
+  local_settings.polarity_mode = polarity_mode;
+  local_settings.reverb_knob_mode = reverb.knob_mode;
 
   trigger_settings_save = true;
 }
@@ -546,9 +618,9 @@ void saveDeviceSettings() {
 void saveBypassStates() {
   Settings &local_settings = SavedSettings.GetSettings();
 
-  local_settings.bypass_reverb = bypass_verb;
-  local_settings.bypass_tremolo = bypass_trem;
-  local_settings.bypass_delay = bypass_delay;
+  local_settings.bypass_reverb = bypass.reverb;
+  local_settings.bypass_tremolo = bypass.tremolo;
+  local_settings.bypass_delay = bypass.delay;
   local_settings.tapped_delay_samples = tap_tempo.tapped_delay_samples;
 
   trigger_settings_save = true;
@@ -556,7 +628,7 @@ void saveBypassStates() {
 
 /// @brief Restore the reverb settings from the saved settings.
 void restoreReverbSettings() {
-	Settings &local_settings = SavedSettings.GetSettings();
+  Settings &local_settings = SavedSettings.GetSettings();
 
   reverb.plate_decay = local_settings.decay;
   reverb.plate_diffusion = local_settings.diffusion;
@@ -580,165 +652,9 @@ void restoreDeviceSettings() {
   updateReverbScales(mono_stereo_mode);
 }
 
-// Forward declarations for tap tempo functions (defined after handleLongPress)
-void enterTapTempo();
-void exitTapTempo();
-void registerTap();
-
-void handleNormalPress(Funbox::Switches footswitch) {
-  if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
-    if (footswitch == Funbox::FOOTSWITCH_1) {
-      exitTapTempo();
-      tap_tempo.just_exited_tap_tempo = true;
-    } else {
-      registerTap();
-    }
-    return;
-  }
-
-  // Clear the tap tempo exit guard
-  tap_tempo.just_exited_tap_tempo = false;
-
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
-    // Only save the settings if the RIGHT footswitch is pressed in edit mode.
-    // The LEFT footswitch is used to exit edit mode without saving.
-    if (footswitch == Funbox::FOOTSWITCH_2) {
-      saveSettings();
-    } else {
-      restoreReverbSettings();
-    }
-
-    // Reset all parameter captures when exiting reverb edit mode
-    p_knob_2_capture.Reset();
-    p_knob_3_capture.Reset();
-    p_knob_4_capture.Reset();
-    p_knob_5_capture.Reset();
-    p_knob_6_capture.Reset();
-    p_sw1_capture.Reset();
-    p_sw2_capture.Reset();
-    p_sw3_capture.Reset();
-
-    pedal_mode = PEDAL_MODE_NORMAL;
-  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
-    // Only save the settings if the RIGHT footswitch is pressed in device
-    // settings mode. The LEFT footswitch is used to exit device settings mode
-    // without saving.
-    if (footswitch == Funbox::FOOTSWITCH_2) {
-      // Save the device settings
-      saveDeviceSettings();
-    } else {
-      // Cancel: restore device settings AND bypass states
-      restoreDeviceSettings();
-    }
-
-    // Reset all switch captures when exiting device settings mode
-    p_sw1_capture.Reset();
-    p_sw2_capture.Reset();
-    p_sw3_capture.Reset();
-
-    pedal_mode = PEDAL_MODE_NORMAL;
-  } else {
-    if (footswitch == Funbox::FOOTSWITCH_1) {
-      bypass_verb = !bypass_verb;
-
-      if (bypass_verb) {
-        // Clear the reverb tails when the reverb is bypassed so if you
-        // turn it back on, it starts fresh and doesn't sound weird.
-        if (current_reverb != nullptr) {
-          current_reverb->Clear();
-        }
-      }
-    } else {
-      // FOOTSWITCH_2: Toggle tremolo on/off
-      bypass_trem = !bypass_trem;
-    }
-
-    saveBypassStates();
-  }
-}
-
-void handleDoublePress(Funbox::Switches footswitch) {
-  // Guard: if we just exited tap tempo, consume this event silently
-  if (tap_tempo.just_exited_tap_tempo) {
-    tap_tempo.just_exited_tap_tempo = false;
-    return;
-  }
-
-  // In tap tempo mode, FS2 double press is just another tap
-  if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
-    if (footswitch == Funbox::FOOTSWITCH_2) {
-      registerTap();
-    }
-    return;
-  }
-
-  // Ignore double presses in edit modes
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB ||
-      pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
-    return;
-  }
-
-  // When double press is detected, a normal press was already detected and
-  // processed, so reverse that right off the bat.
-  handleNormalPress(footswitch);
-
-  if (footswitch == Funbox::FOOTSWITCH_1) {
-    // FOOTSWITCH_1 double press: Enter tap tempo mode
-    enterTapTempo();
-  } else if (footswitch == Funbox::FOOTSWITCH_2) {
-    // FOOTSWITCH_2 double press: Toggle delay on/off
-    bypass_delay = !bypass_delay;
-
-    saveBypassStates();
-  }
-}
-
-void handleLongPress(Funbox::Switches footswitch) {
-  // Guard: if we just exited tap tempo, consume this event silently
-  if (tap_tempo.just_exited_tap_tempo) {
-    tap_tempo.just_exited_tap_tempo = false;
-    return;
-  }
-
-  // Ignore long presses in edit modes or tap tempo
-  if (pedal_mode == PEDAL_MODE_EDIT_REVERB ||
-      pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS ||
-      pedal_mode == PEDAL_MODE_TAP_TEMPO) {
-    return;
-  }
-
-  // When long press is detected, a normal press was already detected and
-  // processed, so reverse that right off the bat.
-  handleNormalPress(footswitch);
-
-  // Check if both footswitches are pressed simultaneously - enter DFU mode
-  bool both_pressed = hw.switches[Funbox::FOOTSWITCH_1].Pressed() &&
-                      hw.switches[Funbox::FOOTSWITCH_2].Pressed();
-
-  if (both_pressed) {
-    // Set flag to trigger DFU mode in main loop (where LED blinking works properly)
-    trigger_dfu_mode = true;
-  } else if (footswitch == Funbox::FOOTSWITCH_1) {
-    // FOOTSWITCH_1 long press: Enter reverb edit mode
-    p_knob_2_capture.Capture(reverb.plate_pre_delay);
-    p_knob_3_capture.Capture(reverb.plate_decay);
-    p_knob_4_capture.Capture(reverb.plate_diffusion);
-    p_knob_5_capture.Capture(reverb.plate_input_damp_high);
-    p_knob_6_capture.Capture(reverb.plate_tank_damp_high);
-    p_sw1_capture.Capture(reverb.plate_mod_speed_pos);
-    p_sw2_capture.Capture(reverb.plate_mod_depth_pos);
-    p_sw3_capture.Capture(reverb.plate_mod_shape_pos);
-
-    bypass_verb = false; // Make sure that reverb is ON
-    pedal_mode = PEDAL_MODE_EDIT_REVERB;
-  } else if (footswitch == Funbox::FOOTSWITCH_2) {
-    // FOOTSWITCH_2 long press: Enter device settings.
-    p_sw1_capture.Capture(switchPosForValue(kReverbKnobMap, reverb.knob_mode));
-    p_sw2_capture.Capture(switchPosForValue(kPolarityMap, polarity_mode));
-    p_sw3_capture.Capture(switchPosForValue(kMonoStereoMap, mono_stereo_mode));
-    pedal_mode = PEDAL_MODE_EDIT_DEVICE_SETTINGS;
-  }
-}
+// ============================================================================
+// TAP TEMPO
+// ============================================================================
 
 void enterTapTempo() {
   // Warm up p_knob_4's smoothing filter before capturing. p_knob_4 is not
@@ -770,8 +686,8 @@ void enterTapTempo() {
   tap_tempo.last_tap_time = System::GetNow();
 
   // Enable delay if it's currently off (so taps produce audible delay)
-  if (bypass_delay) {
-    bypass_delay = false;
+  if (bypass.delay) {
+    bypass.delay = false;
     saveBypassStates();
   }
 
@@ -828,17 +744,168 @@ void registerTap() {
   tap_tempo.tap_flash_counter = TAP_FLASH_CALLBACKS;  // Trigger brief LED flash
 }
 
-inline float hardLimit100_(const float &x) {
-    return (x > 1.) ? 1. : ((x < -1.) ? -1. : x);
+// ============================================================================
+// FOOTSWITCH HANDLERS
+// ============================================================================
+
+void handleNormalPress(Funbox::Switches footswitch) {
+  if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+    if (footswitch == Funbox::FOOTSWITCH_1) {
+      exitTapTempo();
+      tap_tempo.just_exited_tap_tempo = true;
+    } else {
+      registerTap();
+    }
+    return;
+  }
+
+  // Clear the tap tempo exit guard
+  tap_tempo.just_exited_tap_tempo = false;
+
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
+    // Only save the settings if the RIGHT footswitch is pressed in edit mode.
+    // The LEFT footswitch is used to exit edit mode without saving.
+    if (footswitch == Funbox::FOOTSWITCH_2) {
+      saveSettings();
+    } else {
+      restoreReverbSettings();
+    }
+
+    // Reset all parameter captures when exiting reverb edit mode
+    p_knob_2_capture.Reset();
+    p_knob_3_capture.Reset();
+    p_knob_4_capture.Reset();
+    p_knob_5_capture.Reset();
+    p_knob_6_capture.Reset();
+    p_sw1_capture.Reset();
+    p_sw2_capture.Reset();
+    p_sw3_capture.Reset();
+
+    pedal_mode = PEDAL_MODE_NORMAL;
+  } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    // Only save the settings if the RIGHT footswitch is pressed in device
+    // settings mode. The LEFT footswitch is used to exit device settings mode
+    // without saving.
+    if (footswitch == Funbox::FOOTSWITCH_2) {
+      // Save the device settings
+      saveDeviceSettings();
+    } else {
+      // Cancel: restore device settings AND bypass states
+      restoreDeviceSettings();
+    }
+
+    // Reset all switch captures when exiting device settings mode
+    p_sw1_capture.Reset();
+    p_sw2_capture.Reset();
+    p_sw3_capture.Reset();
+
+    pedal_mode = PEDAL_MODE_NORMAL;
+  } else {
+    if (footswitch == Funbox::FOOTSWITCH_1) {
+      bypass.reverb = !bypass.reverb;
+
+      if (bypass.reverb) {
+        // Clear the reverb tails when the reverb is bypassed so if you
+        // turn it back on, it starts fresh and doesn't sound weird.
+        if (current_reverb != nullptr) {
+          current_reverb->Clear();
+        }
+      }
+    } else {
+      // FOOTSWITCH_2: Toggle tremolo on/off
+      bypass.tremolo = !bypass.tremolo;
+    }
+
+    saveBypassStates();
+  }
 }
 
-void quickLedFlash() {
-  led_left.Set(1.0f);
-  led_right.Set(1.0f);
-  led_left.Update();
-  led_right.Update();
-  hw.DelayMs(500);
+void handleDoublePress(Funbox::Switches footswitch) {
+  // Guard: if we just exited tap tempo, consume this event silently
+  if (tap_tempo.just_exited_tap_tempo) {
+    tap_tempo.just_exited_tap_tempo = false;
+    return;
+  }
+
+  // In tap tempo mode, FS2 double press is just another tap
+  if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+    if (footswitch == Funbox::FOOTSWITCH_2) {
+      registerTap();
+    }
+    return;
+  }
+
+  // Ignore double presses in edit modes
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB ||
+      pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
+    return;
+  }
+
+  // When double press is detected, a normal press was already detected and
+  // processed, so reverse that right off the bat.
+  handleNormalPress(footswitch);
+
+  if (footswitch == Funbox::FOOTSWITCH_1) {
+    // FOOTSWITCH_1 double press: Enter tap tempo mode
+    enterTapTempo();
+  } else if (footswitch == Funbox::FOOTSWITCH_2) {
+    // FOOTSWITCH_2 double press: Toggle delay on/off
+    bypass.delay = !bypass.delay;
+
+    saveBypassStates();
+  }
 }
+
+void handleLongPress(Funbox::Switches footswitch) {
+  // Guard: if we just exited tap tempo, consume this event silently
+  if (tap_tempo.just_exited_tap_tempo) {
+    tap_tempo.just_exited_tap_tempo = false;
+    return;
+  }
+
+  // Ignore long presses in edit modes or tap tempo
+  if (pedal_mode == PEDAL_MODE_EDIT_REVERB ||
+      pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS ||
+      pedal_mode == PEDAL_MODE_TAP_TEMPO) {
+    return;
+  }
+
+  // When long press is detected, a normal press was already detected and
+  // processed, so reverse that right off the bat.
+  handleNormalPress(footswitch);
+
+  // Check if both footswitches are pressed simultaneously - enter DFU mode
+  bool both_pressed = hw.switches[Funbox::FOOTSWITCH_1].Pressed() &&
+                      hw.switches[Funbox::FOOTSWITCH_2].Pressed();
+
+  if (both_pressed) {
+    // Set flag to trigger DFU mode in main loop (where LED blinking works properly)
+    trigger_dfu_mode = true;
+  } else if (footswitch == Funbox::FOOTSWITCH_1) {
+    // FOOTSWITCH_1 long press: Enter reverb edit mode
+    p_knob_2_capture.Capture(reverb.plate_pre_delay);
+    p_knob_3_capture.Capture(reverb.plate_decay);
+    p_knob_4_capture.Capture(reverb.plate_diffusion);
+    p_knob_5_capture.Capture(reverb.plate_input_damp_high);
+    p_knob_6_capture.Capture(reverb.plate_tank_damp_high);
+    p_sw1_capture.Capture(reverb.plate_mod_speed_pos);
+    p_sw2_capture.Capture(reverb.plate_mod_depth_pos);
+    p_sw3_capture.Capture(reverb.plate_mod_shape_pos);
+
+    bypass.reverb = false; // Make sure that reverb is ON
+    pedal_mode = PEDAL_MODE_EDIT_REVERB;
+  } else if (footswitch == Funbox::FOOTSWITCH_2) {
+    // FOOTSWITCH_2 long press: Enter device settings.
+    p_sw1_capture.Capture(switchPosForValue(kReverbKnobMap, reverb.knob_mode));
+    p_sw2_capture.Capture(switchPosForValue(kPolarityMap, polarity_mode));
+    p_sw3_capture.Capture(switchPosForValue(kMonoStereoMap, mono_stereo_mode));
+    pedal_mode = PEDAL_MODE_EDIT_DEVICE_SETTINGS;
+  }
+}
+
+// ============================================================================
+// AUDIO CALLBACK
+// ============================================================================
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
                    size_t size) {
@@ -872,7 +939,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
   } else {
     // Normal mode (and tap tempo)
-    led_left.Set(bypass_verb ? 0.0f : 1.0f);
+    led_left.Set(bypass.reverb ? 0.0f : 1.0f);
 
     if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
       // Tap tempo right LED: rhythmic flash at tapped tempo
@@ -903,7 +970,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         // If just delay is on, show full-strength LED
         // If just trem is on, show 40% pulsing LED
         // If both are on, show 100% pulsing LED
-        led_right.Set(bypass_trem ? bypass_delay ? 0.0f : 1.0 : bypass_delay ? trem_val * TREMOLO_LED_BRIGHTNESS : trem_val);
+        led_right.Set(bypass.tremolo ? bypass.delay ? 0.0f : 1.0 : bypass.delay ? trem_val * TREMOLO_LED_BRIGHTNESS : trem_val);
       }
     }
   }
@@ -912,7 +979,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
   reverb.wet = p_verb_amt.Process();
 
-  TremDelMakeUpGain makeup_gain = (!bypass_delay || !bypass_trem) ? MAKEUP_GAIN_NORMAL : MAKEUP_GAIN_NONE;
+  TremDelMakeUpGain makeup_gain = (!bypass.delay || !bypass.tremolo) ? MAKEUP_GAIN_NORMAL : MAKEUP_GAIN_NONE;
 
   if (pedal_mode == PEDAL_MODE_NORMAL || pedal_mode == PEDAL_MODE_TAP_TEMPO) {
     // Common processing for normal and tap tempo modes
@@ -1065,7 +1132,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     float s_L, s_R;
     s_L = dry_L;
     if (mono_stereo_mode == MS_MODE_MIMO || mono_stereo_mode == MS_MODE_MISO) {
-      // Use the mono signel (L) for both channels in MIMO and MISO modes
+      // Use the mono signal (L) for both channels in MIMO and MISO modes
       s_R = dry_L;
     } else {
       // Use both L & R inputs in SISO mode
@@ -1078,7 +1145,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     s_L = notch2_L.Process(s_L);
     s_R = notch2_R.Process(s_R);
 
-    if (!bypass_delay) {
+    if (!bypass.delay) {
       float fdrywet = delay_drywet / 100.0f;
       float delay_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.66f;
 
@@ -1092,7 +1159,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       s_R = fdrywet * wet_R * 0.333f + (1.0f - fdrywet) * s_R * delay_make_up_gain;
     }
 
-    if (!bypass_trem) {
+    if (!bypass.tremolo) {
       float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.2f;
 
       // Process tremolo effect
@@ -1114,7 +1181,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     left_input = hardLimit100_(s_L) * reverb_dry_scale_factor;
     right_input = hardLimit100_(s_R) * reverb_dry_scale_factor;
 
-    float gain = minus_18db_gain * minus_20db_gain * (1.0f + input_amplification * 7.0f) * clearPopCancelValue;
+    float gain = MINUS_18DB_GAIN * MINUS_20DB_GAIN * (1.0f + input_amplification * 7.0f) * clearPopCancelValue;
     float rev_l, rev_r;
 
     // Switch active reverb algorithm based on toggle switch
@@ -1141,7 +1208,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       rev_r *= 4.0f;
     }
 
-    if (!bypass_verb) {
+    if (!bypass.reverb) {
       // left_output = ((left_input * reverb.dry * 0.1) + (verb.getLeftOutput() * reverb.wet * clearPopCancelValue));
       // right_output = ((right_input * reverb.dry * 0.1) + (verb.getRightOutput() * reverb.wet * clearPopCancelValue));
       left_output = ((left_input * reverb.dry * reverb_reverse_scale_factor) + (rev_l * reverb.wet * clearPopCancelValue));
@@ -1161,11 +1228,73 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   }
 }
 
+// ============================================================================
+// FACTORY RESET
+// ============================================================================
+
+/// @brief Handles the factory reset interaction loop.
+///
+/// Called from main() when is_factory_reset_mode is true. The user must rotate
+/// Knob 1 through a sequence (100% → 0% → 100% → 0%) to confirm the reset.
+/// Each completed stage speeds up the LED blinking as visual feedback.
+/// Completing the sequence restores defaults and starts normal pedal operation.
+void runFactoryResetLoop() {
+  hw.ProcessAllControls();
+
+  static uint32_t last_led_toggle_time = 0;
+  static bool led_toggle = false;
+  static uint32_t blink_interval = 1000;
+  uint32_t now = System::GetNow();
+  uint32_t elapsed_time = now - last_led_toggle_time;
+  if (elapsed_time >= blink_interval) {
+    // Alternate the LED lights in factory reset mode
+    last_led_toggle_time = now;
+    led_toggle = !led_toggle;
+    led_left.Set(led_toggle ? 1.0f : 0.0f);
+    led_right.Set(led_toggle ? 0.0f : 1.0f);
+    led_left.Update();
+    led_right.Update();
+  }
+
+  float low_knob_threshold = 0.05;
+  float high_knob_threshold = 0.95;
+  float blink_faster_amount = 300; // each stage removes this many MS from the factory reset blinking
+  float knob_1_value = p_knob_1.Process();
+  if (factory_reset_stage == 0 && knob_1_value >= high_knob_threshold) {
+    factory_reset_stage++;
+    blink_interval -= blink_faster_amount; // make the blinking faster as a UI feedback that the stage has been met
+    quickLedFlash();
+  } else if (factory_reset_stage == 1 && knob_1_value <= low_knob_threshold) {
+    factory_reset_stage++;
+    blink_interval -= blink_faster_amount; // make the blinking faster as a UI feedback that the stage has been met
+    quickLedFlash();
+  } else if (factory_reset_stage == 2 && knob_1_value >= high_knob_threshold) {
+    factory_reset_stage++;
+    blink_interval -= blink_faster_amount; // make the blinking faster as a UI feedback that the stage has been met
+    quickLedFlash();
+  } else if (factory_reset_stage == 3 && knob_1_value <= low_knob_threshold) {
+    SavedSettings.RestoreDefaults();
+    loadSettings();
+    quickLedFlash();
+
+    hw.StartAudio(AudioCallback);
+    factory_reset_stage = 0;
+    bypass.delay = true;
+    bypass.tremolo = true;
+    pedal_mode = PEDAL_MODE_NORMAL;
+    is_factory_reset_mode = false;
+  }
+}
+
+// ============================================================================
+// MAIN
+// ============================================================================
+
 int main() {
   hw.Init(true); // Init the CPU at full speed
   hw.SetAudioBlockSize(8);  // Number of samples handled per callback
   hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
-  
+
   // Initialize LEDs
   led_left.Init(hw.seed.GetPin(Funbox::LED_1), false);
   led_right.Init(hw.seed.GetPin(Funbox::LED_2), false);
@@ -1237,22 +1366,22 @@ int main() {
   current_reverb = &plate_reverb;
 
   Settings defaultSettings = {
-    SETTINGS_VERSION, // version
-    reverb.plate_decay, // decay
-    reverb.plate_diffusion, // diffusion
-    reverb.plate_input_damp_high, // input_cutoff_freq
-    reverb.plate_tank_damp_high, // tank_cutoff_freq
-    reverb.plate_mod_speed_pos, // tank_mod_speed_pos
-    reverb.plate_mod_depth_pos, // tank_mod_depth_pos
-    reverb.plate_mod_shape_pos, // tank_mod_shape_pos
-    reverb.plate_pre_delay, // pre_delay
-    MS_MODE_MIMO, // mono_stereo_mode
-    POLARITY_NORMAL, // polarity_mode
-    REVERB_KNOB_DRY_WET_MIX, // reverb_knob_mode
-    true,         // bypass_reverb
-    true,         // bypass_tremolo
-    true,         // bypass_delay
-    0.0f,         // tap_tempo.tapped_delay_samples
+    SETTINGS_VERSION,               // version
+    reverb.plate_decay,             // decay
+    reverb.plate_diffusion,         // diffusion
+    reverb.plate_input_damp_high,   // input_cutoff_freq
+    reverb.plate_tank_damp_high,    // tank_cutoff_freq
+    reverb.plate_mod_speed_pos,     // tank_mod_speed_pos
+    reverb.plate_mod_depth_pos,     // tank_mod_depth_pos
+    reverb.plate_mod_shape_pos,     // tank_mod_shape_pos
+    reverb.plate_pre_delay,         // pre_delay
+    MS_MODE_MIMO,                   // mono_stereo_mode
+    POLARITY_NORMAL,                // polarity_mode
+    REVERB_KNOB_DRY_WET_MIX,       // reverb_knob_mode
+    true,                           // bypass_reverb
+    true,                           // bypass_tremolo
+    true,                           // bypass_delay
+    0.0f,                           // tapped_delay_samples
   };
   SavedSettings.Init(defaultSettings);
 
@@ -1280,12 +1409,12 @@ int main() {
   } else {
     hw.StartAudio(AudioCallback);
   }
-  
+
   while (true) {
     if(trigger_settings_save) {
-			SavedSettings.Save(); // Writing locally stored settings to the external flash
-			trigger_settings_save = false;
-		} else if (trigger_dfu_mode) {
+      SavedSettings.Save(); // Writing locally stored settings to the external flash
+      trigger_settings_save = false;
+    } else if (trigger_dfu_mode) {
       // Shut 'er down so the LEDs always flash
       hw.StopAdc();
       hw.StopAudio();
@@ -1312,51 +1441,7 @@ int main() {
       // Reset system to bootloader after LED flashing
       System::ResetToBootloader();
     } else if (is_factory_reset_mode) {
-      hw.ProcessAllControls();
-
-      static uint32_t last_led_toggle_time = 0;
-      static bool led_toggle = false;
-      static uint32_t blink_interval = 1000;
-      uint32_t now = System::GetNow();
-      uint32_t elapsed_time = now - last_led_toggle_time;
-      if (elapsed_time >= blink_interval) {
-        // Alternate the LED lights in factory reset mode
-        last_led_toggle_time = now;
-        led_toggle = !led_toggle;
-        led_left.Set(led_toggle ? 1.0f : 0.0f);
-        led_right.Set(led_toggle ? 0.0f : 1.0f);
-        led_left.Update();
-        led_right.Update();
-      }
-
-      float low_knob_threshold = 0.05;
-      float high_knob_threshold = 0.95;
-      float blink_faster_amount = 300; // each stage removes this many MS from the factory reset blinking
-      float knob_1_value = p_knob_1.Process();
-      if (factory_reset_stage == 0 && knob_1_value >= high_knob_threshold) {
-        factory_reset_stage++;
-        blink_interval -= blink_faster_amount; // make the blinking faster as a UI feedback that the stage has been met
-        quickLedFlash();          
-      } else if (factory_reset_stage == 1 && knob_1_value <= low_knob_threshold) {
-        factory_reset_stage++;
-        blink_interval -= blink_faster_amount; // make the blinking faster as a UI feedback that the stage has been met
-        quickLedFlash();          
-      } else if (factory_reset_stage == 2 && knob_1_value >= high_knob_threshold) {
-        factory_reset_stage++;
-        blink_interval -= blink_faster_amount; // make the blinking faster as a UI feedback that the stage has been met
-        quickLedFlash();          
-      } else if (factory_reset_stage == 3 && knob_1_value <= low_knob_threshold) {
-        SavedSettings.RestoreDefaults();
-        loadSettings();
-        quickLedFlash();          
-
-        hw.StartAudio(AudioCallback);
-        factory_reset_stage = 0;
-        bypass_delay = true;
-        bypass_trem = true;
-        pedal_mode = PEDAL_MODE_NORMAL;
-        is_factory_reset_mode = false;
-      }
+      runFactoryResetLoop();
     }
     hw.DelayMs(10);
   }
