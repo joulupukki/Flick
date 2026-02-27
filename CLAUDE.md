@@ -353,23 +353,86 @@ Abstraction layer maps both to (RIGHT/MIDDLE/LEFT) = (0/1/2)
 
 ## Code Organization
 
+### Architecture: Orchestrator + Modular Effects
+
+Flick uses a clean separation between UX orchestration and DSP processing:
+
+- **flick.cpp** - UX orchestrator (hardware I/O, modes, parameter processing, audio pipeline)
+- **Effect modules** - Hardware-independent DSP processors (base classes + derived algorithms)
+
+### File Structure
+
 ```
 src/
-├── flick.cpp                    # Main program, audio callback
-├── daisy_hardware.h/cpp         # Hardware abstraction layer
+├── flick.cpp                    # UX orchestrator, audio callback, mode management
+├── daisy_hardware.h/cpp         # Hardware abstraction layer (Funbox/HotHouse)
 ├── parameter_capture.h          # Soft takeover for edit modes
-├── flick_oscillator.h/cpp       # LFO/oscillator for tremolo
+│
+├── delay_effect.h/cpp           # Delay effect (stereo delay with feedback)
+│
+├── tremolo_effect.h/cpp         # Tremolo base class + 3 algorithms:
+│   │                            #   - SineTremolo (smooth)
+│   │                            #   - SquareTremolo (choppy opto-style)
+│   │                            #   - HarmonicTremolo (band-split + EQ)
+│
+├── reverb_effect.h              # Reverb base class (polymorphic interface)
+├── plate_reverb.h/cpp           # Plate reverb (Dattorro algorithm)
+├── hall_reverb.h/cpp            # Hall reverb (Schroeder algorithm)
+├── spring_reverb.h/cpp          # Spring reverb (digital waveguide)
+│
+├── flick_oscillator.h/cpp       # LFO/oscillator (used by tremolo effects)
 ├── flick_filters.hpp            # DSP filter implementations
-├── hall_reverb.h/cpp            # Schroeder hall reverb
-├── spring_reverb.h/cpp          # Spring reverb emulation
-└── PlateauNEVersio/
-    ├── Dattorro.hpp/cpp         # Plate reverb (Dattorro)
+│
+└── PlateauNEVersio/             # Third-party Dattorro implementation
+    ├── Dattorro.hpp/cpp         # Plate reverb core (wrapped by PlateReverb)
     ├── dsp/
     │   ├── delays/              # Delay line components
     │   ├── filters/             # Filter components
     │   └── modulation/          # LFO components
     └── utilities/               # Utility functions
 ```
+
+### Effect Class Hierarchy
+
+All effects use runtime polymorphism (virtual functions) for algorithm switching:
+
+```cpp
+// Tremolo: Base class with 3 derived algorithms
+class TremoloEffect {
+  virtual void ProcessSample(...) = 0;
+  virtual void SetSpeed(float hz);
+  virtual void SetDepth(float depth);
+};
+class SineTremolo : public TremoloEffect { /* smooth */ };
+class SquareTremolo : public TremoloEffect { /* choppy */ };
+class HarmonicTremolo : public TremoloEffect { /* band-split */ };
+
+// Reverb: Base class with 3 derived algorithms
+class ReverbEffect {
+  virtual void ProcessSample(...) = 0;
+  virtual void SetDecay(float decay) {}  // Optional (no-op default)
+  virtual void SetDiffusion(float d) {}  // Optional (plate-specific)
+  // ... more optional algorithm-specific parameters
+};
+class PlateReverb : public ReverbEffect { /* Dattorro */ };
+class HallReverb : public ReverbEffect { /* Schroeder */ };
+class SpringReverb : public ReverbEffect { /* waveguide */ };
+
+// Delay: Single class (no polymorphism needed)
+class DelayEffect {
+  void ProcessSample(...);
+  void SetDelayTime(float samples);
+  void SetFeedback(float feedback);
+};
+```
+
+**Design principles:**
+- Effects are **pure DSP** - no knowledge of hardware, knobs, or switches
+- **Bypass logic** managed by orchestrator, not effects
+- **Parameter scaling** (e.g., tremolo depth × 1.25 for harmonic mode) happens in effect classes
+- **Dry/wet mixing** happens in orchestrator (effects return wet-only signal)
+- **Polymorphic switching** via base class pointers (`current_tremolo->ProcessSample()`)
+- **Algorithm-specific parameters** use virtual methods with no-op defaults
 
 ## Key Constants
 
@@ -380,17 +443,29 @@ TREMOLO_SPEED_MIN = 0.2 Hz
 TREMOLO_SPEED_MAX = 16.0 Hz
 PLATE_TANK_MOD_SPEED_SCALE = 8.0f   // Dattorro reverb speed scaling
 PLATE_TANK_MOD_DEPTH_SCALE = 15.0f  // Dattorro reverb depth scaling
-SETTINGS_VERSION = 7  // Increment on Settings struct change
+SETTINGS_VERSION = 8  // Increment on Settings struct change
 ```
 
 ## Development Notes
 
 ### Adding New Effects
-1. Include effect class in [flick.cpp](src/flick.cpp)
-2. Add to audio callback pipeline
-3. Map controls in appropriate mode
-4. Add bypass state to Settings if needed
-5. Update SETTINGS_VERSION
+
+**Creating a new effect module:**
+1. Create effect class files (e.g., `chorus_effect.h/cpp`)
+2. Inherit from base class if multiple algorithms (or create standalone class)
+3. Implement `Init()`, `ProcessSample()`, and parameter setters
+4. Keep effect hardware-independent (no knob/switch knowledge)
+5. Add source file to [Makefile](src/Makefile) `CPP_SOURCES`
+
+**Integrating into orchestrator:**
+1. Include effect header in [flick.cpp](src/flick.cpp)
+2. Instantiate effect object(s)
+3. Call `Init()` in `main()`
+4. Call `ProcessSample()` in audio callback pipeline
+5. Map controls to effect parameters (via setters)
+6. Handle bypass logic and dry/wet mixing in orchestrator
+7. Add bypass state to Settings struct if persistent
+8. Update `SETTINGS_VERSION` if Settings struct changes
 
 ### Modifying Hardware Abstraction
 - Changes to [daisy_hardware.h](src/daisy_hardware.h) affect both platforms
