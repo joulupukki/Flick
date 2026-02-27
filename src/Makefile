@@ -33,6 +33,9 @@ CPP_SOURCES += PlateauNEVersio/Dattorro.cpp
 LIBDAISY_DIR = ../libDaisy
 DAISYSP_DIR = ../DaisySP
 
+# Optimise for size rather than speed (-O2 is the libDaisy default)
+OPT = -Os
+
 # Core location, and generic Makefile.
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile

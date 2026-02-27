@@ -506,7 +506,7 @@ int switchPosForValue(const T (&map)[3], T value) {
 }
 
 inline float hardLimit100_(const float &x) {
-  return (x > 1.) ? 1. : ((x < -1.) ? -1. : x);
+  return (x > 1.0f) ? 1.0f : ((x < -1.0f) ? -1.0f : x);
 }
 
 void quickLedFlash() {
@@ -970,7 +970,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         // If just delay is on, show full-strength LED
         // If just trem is on, show 40% pulsing LED
         // If both are on, show 100% pulsing LED
-        led_right.Set(bypass.tremolo ? bypass.delay ? 0.0f : 1.0 : bypass.delay ? trem_val * TREMOLO_LED_BRIGHTNESS : trem_val);
+        led_right.Set(bypass.tremolo ? bypass.delay ? 0.0f : 1.0f : bypass.delay ? trem_val * TREMOLO_LED_BRIGHTNESS : trem_val);
       }
     }
   }
@@ -1071,10 +1071,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     // Reverb dry/wet mode (from saved setting)
     switch (reverb.knob_mode) {
       case REVERB_KNOB_ALL_DRY:
-        reverb.dry = 1.0;
+        reverb.dry = 1.0f;
         break;
       case REVERB_KNOB_DRY_WET_MIX:
-        reverb.dry = 1.0 - reverb.wet;
+        reverb.dry = 1.0f - reverb.wet;
         break;
       case REVERB_KNOB_ALL_WET:
         reverb.dry = 0.0f;
@@ -1082,7 +1082,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
   } else if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
     // Edit mode with parameter capture
-    reverb.dry = 1.0; // Always use dry 100% in edit mode
+    reverb.dry = 1.0f; // Always use dry 100% in edit mode
 
     // Use capture objects - pass calculated values, they return frozen or current based on movement
     reverb.plate_pre_delay = p_knob_2_capture.Process();
@@ -1105,10 +1105,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     // Apply reverb dry/wet so changes are audible in settings mode
     switch (reverb.knob_mode) {
       case REVERB_KNOB_ALL_DRY:
-        reverb.dry = 1.0;
+        reverb.dry = 1.0f;
         break;
       case REVERB_KNOB_DRY_WET_MIX:
-        reverb.dry = 1.0 - reverb.wet;
+        reverb.dry = 1.0f - reverb.wet;
         break;
       case REVERB_KNOB_ALL_WET:
         reverb.dry = 0.0f;
@@ -1212,7 +1212,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     if (mono_stereo_mode == MS_MODE_MIMO) {
-      out[0][i] = ((s_L * 0.5) + (s_R * 0.5)) * polarity_L;
+      out[0][i] = ((s_L * 0.5f) + (s_R * 0.5f)) * polarity_L;
       out[1][i] = 0.0f;
     } else {
       out[0][i] = s_L * polarity_L;
@@ -1249,8 +1249,8 @@ void runFactoryResetLoop() {
     led_right.Update();
   }
 
-  float low_knob_threshold = 0.05;
-  float high_knob_threshold = 0.95;
+  float low_knob_threshold = 0.05f;
+  float high_knob_threshold = 0.95f;
   float blink_faster_amount = 300; // each stage removes this many MS from the factory reset blinking
   float knob_1_value = p_knob_1.Process();
   if (factory_reset_stage == 0 && knob_1_value >= high_knob_threshold) {
@@ -1334,12 +1334,12 @@ int main() {
   // Zero out the InterpDelay buffers used by the plate reverb (Dattorro SDRAM)
   for(int i = 0; i < 50; i++) {
       for(int j = 0; j < 144000; j++) {
-          sdramData[i][j] = 0.;
+          sdramData[i][j] = 0.0f;
       }
   }
   // Set this to 1.0 or plate reverb won't work. This is defined in Dattorro's
   // InterpDelay.cpp file.
-  hold = 1.;
+  hold = 1.0f;
 
   // Initialize Plate Reverb (Dattorro)
   plate_reverb.Init(hw.AudioSampleRate());
