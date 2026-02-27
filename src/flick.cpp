@@ -318,15 +318,15 @@ constexpr DelayTimingMode kDelayTimingMap[] = {
 };
 
 constexpr float kDelayTimingMultiplier[] = {
-  0.75f,    // DELAY_TIMING_DOTTED_EIGHTH
-  0.3333f,  // DELAY_TIMING_TRIPLET (1/3 — eighth note triplets)
-  1.0f,     // DELAY_TIMING_QUARTER
+  0.75f,    // DELAY_TIMING_DOTTED_EIGHTH (index 0)
+  1.0f,     // DELAY_TIMING_QUARTER (index 1)
+  0.3333f,  // DELAY_TIMING_TRIPLET (index 2, 1/3 — eighth note triplets)
 };
 
 enum PolarityMode {
+  POLARITY_INVERT_RIGHT,
   POLARITY_NORMAL,
   POLARITY_INVERT_LEFT,
-  POLARITY_INVERT_RIGHT,
 };
 
 constexpr PolarityMode kPolarityMap[] = {
