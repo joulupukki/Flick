@@ -32,7 +32,7 @@ constexpr float PLATE_TANK_MOD_DEPTH_VALUES[] = {0.5f, 0.25f, 0.1f};
 constexpr float PLATE_TANK_MOD_SHAPE_VALUES[] = {0.5f, 0.25f, 0.1f};
 
 PlateReverb::PlateReverb()
-    : verb_(48000, 16, 4.0) {
+    : verb_(48000, 16, 4.0f) {
   // Initialize default parameters (from flick.cpp)
   params_.decay = 0.8f;
   params_.diffusion = 0.85f;
@@ -47,7 +47,7 @@ PlateReverb::PlateReverb()
 void PlateReverb::Init(float sample_rate) {
   sample_rate_ = sample_rate;
   verb_.setSampleRate(sample_rate);
-  verb_.setTimeScale(1.007500);
+  verb_.setTimeScale(1.007500f);
   verb_.enableInputDiffusion(true);
 
   // Set low-cut filters (pitch-based: 440 * 2^(pitch - 5))
