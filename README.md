@@ -177,8 +177,10 @@ different IR:
    cd src
    make update-irs
    ```
-   This runs `tools/wav_to_ir_header.py` which trims the IR to 750 ms,
+   This runs `tools/wav_to_ir_header.py` which trims the IR to 170 ms
+   (the maximum for real-time convolution on the Daisy Seed),
    normalizes the frequency response, and generates `src/ir_data.h`.
+   The reverb tail is extended beyond 170 ms via feedback recirculation.
 
 3. Rebuild and flash:
    ```bash
@@ -186,11 +188,10 @@ different IR:
    make flash   # or make program
    ```
 
-**IR length limit:** The IR data is stored in SRAM (copied from QSPI at
-boot). With the current firmware size, the maximum practical IR length
-is about 750 ms. Longer IRs can be used by reducing other code or
-by placing the IR data in a QSPI-resident section (requires custom
-binary generation).
+**IR length limit:** The IR is limited to 170 ms (64 convolution
+partitions) by the CPU budget — longer IRs cause audio glitches.
+The reverb tail is extended beyond this via a feedback loop with
+low-pass damping, producing a natural decay of 1-2 seconds.
 
 ## Spring Reverb: Technical Approach
 
@@ -214,8 +215,14 @@ cabinet simulator project.
    output.
 
 4. This approach reduces the CPU cost from ~122% (direct FIR) to
-   ~30-40% for a 750 ms IR, leaving headroom for the delay and tremolo
-   effects.
+   ~10% for a 170 ms IR (64 partitions), leaving headroom for the
+   delay and tremolo effects.
+
+5. To extend the reverb tail beyond the 170 ms IR, a feedback loop
+   recirculates the convolution output back into its input through a
+   low-pass damping filter. This causes high frequencies to decay
+   faster than lows, mimicking real spring reverb behavior. Each
+   round trip adds another ~170 ms of tail.
 
 ### Key constraints
 
@@ -223,8 +230,9 @@ cabinet simulator project.
   required by the convolution engine's FFT partition size. The latency
   is imperceptible for guitar effects.
 
-- **SRAM budget** limits the IR length. The firmware, IR data, and
-  runtime state must all fit within 480 KB of SRAM.
+- **CPU budget** limits the IR to ~170 ms (64 partitions). Longer IRs
+  cause the audio callback to overrun its deadline. The feedback loop
+  extends the perceived tail without additional CPU cost.
 
 - **SDRAM** is used for the convolution engine's working buffers
   (pre-computed IR FFTs and frequency-domain delay line).
