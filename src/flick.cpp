@@ -35,7 +35,7 @@
  * - ReverbEffect:     Base class for reverb algorithms (reverb_effect.h)
  *   - PlateReverb:    Dattorro algorithm (plate_reverb.h/cpp)
  *   - HallReverb:     Schroeder algorithm (hall_reverb.h/cpp)
- *   - SpringReverb:   Digital waveguide (spring_reverb.h/cpp)
+ *   - SpringReverb:   IR convolution (spring_reverb.h/cpp)
  *
  * ORCHESTRATOR RESPONSIBILITIES:
  * - Read hardware controls (knobs, switches, footswitches)
@@ -965,7 +965,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       // Normal mode right LED (existing pulsing trem/delay logic)
       static int count = 0;
       // set led 100 times/sec
-      if (++count == hw.AudioCallbackRate() / 100) {
+      if (++count >= (int)(hw.AudioCallbackRate() / 100)) {
         count = 0;
         // If just delay is on, show full-strength LED
         // If just trem is on, show 40% pulsing LED
@@ -1285,12 +1285,12 @@ void runFactoryResetLoop() {
 
 int main() {
   hw.Init(true); // Init the CPU at full speed
-  hw.SetAudioBlockSize(8);  // Number of samples handled per callback
+  hw.SetAudioBlockSize(128);  // 128 samples required for IR convolution engine
   hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
 
-  // Initialize LEDs
-  led_left.Init(hw.seed.GetPin(Funbox::LED_1), false);
-  led_right.Init(hw.seed.GetPin(Funbox::LED_2), false);
+  // Initialize LEDs (samplerate must match AudioCallbackRate for correct PWM)
+  led_left.Init(hw.seed.GetPin(Funbox::LED_1), false, hw.AudioCallbackRate());
+  led_right.Init(hw.seed.GetPin(Funbox::LED_2), false, hw.AudioCallbackRate());
 
   //
   // Initialize Potentiometers
@@ -1354,11 +1354,9 @@ int main() {
   hall_reverb.SetTankModSpeed(0.5f);
   hall_reverb.SetTankModDepth(1.5f);
 
-  // Initialize Spring Reverb (Digital Waveguide)
+  // Initialize Spring Reverb (IR convolution)
   spring_reverb.Init(hw.AudioSampleRate());
-  spring_reverb.SetDecay(0.7f); // Spring decay
-  spring_reverb.SetMix(1.0f);   // 100% wet - it'll be mixed with Knob 1
-  spring_reverb.SetDamping(7000.0f); // High-frequency damping
+  spring_reverb.SetMix(1.0f);   // 100% wet - mixed by orchestrator via Knob 1
 
   // Set default active reverb
   current_reverb = &plate_reverb;

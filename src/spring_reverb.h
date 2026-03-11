@@ -16,15 +16,20 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Digital waveguide model of spring reverb
-// Goal: Emulate 1960'ss Fender Deluxe Reverb
+// IR-based spring reverb using partitioned overlap-save convolution.
+// Uses a pre-recorded spring reverb impulse response for realistic sound.
+// Convolution engine adapted from MuleBox (github.com/optilude/MuleBox).
+//
+// The IR captures the first ~170ms of a real spring reverb. To extend the
+// tail beyond the IR length, a feedback loop recirculates the convolution
+// output back into its input with low-pass damping (highs decay faster
+// than lows, mimicking real spring behavior).
 
 #ifndef SPRING_REVERB_HPP
 #define SPRING_REVERB_HPP
 
-#include "daisysp.h"
 #include "reverb_effect.h"
-#include <array>
+#include "convolution_engine.h"
 
 namespace flick {
 
@@ -38,70 +43,27 @@ public:
     void ProcessSample(float in_left, float in_right, float* out_left, float* out_right) override;
     void Clear() override;
 
-    // Override parameters this reverb uses
-    void SetDecay(float decay) override { decay_ = decay; }
-    void SetMix(float mix) override { mix_ = mix; }
-    void SetPreDelay(float pre_delay) override {
-        float samples = pre_delay * sample_rate_;
-        pre_delay_.SetDelay(samples);
-    }
-
-    // Spring-specific parameters (not in base class)
-    void SetDamping(float damping_freq) {
-        lp_filter_.SetFrequency(damping_freq);
-    }
-
-    // Block processing (non-virtual, spring-specific)
-    void Process(const float* in_left, const float* in_right,
-                 float* out_left, float* out_right, size_t size);
+    // SetMix inherited from ReverbEffect (used by orchestrator for dry/wet)
+    // All other parameter setters (SetDecay, SetPreDelay, etc.) use
+    // inherited no-op defaults since the IR captures these characteristics.
 
 private:
-    static constexpr int kNumAllPassFilters = 4;
+    ConvolutionEngine convolution_;
 
-    // All-pass filter delays in samples (for 48kHz) - short for spring reverb
-    static constexpr std::array<int, kNumAllPassFilters> kAllPassDelays = {
-        120,   // ~2.5ms
-        240,   // ~5ms
-        336,   // ~7ms
-        480    // ~10ms
-    };
+    // Internal buffering: accumulate samples until we have a full block
+    // for the convolution engine (CONV_PARTITION_SIZE = 128 samples).
+    float inputBuf_[CONV_PARTITION_SIZE];
+    float outputBuf_[CONV_PARTITION_SIZE];
+    size_t bufPos_ = 0;
 
-    // Main delay for recirculation (spring length)
-    daisysp::DelayLine<float, 4800> main_delay_;  // ~100ms max for audible reverb
+    // Feedback recirculation to extend the reverb tail beyond the IR length.
+    // Each round trip through the IR adds another ~170ms of tail.
+    static constexpr float FEEDBACK = 0.5f;      // Feedback amount (0=none, <1=stable)
+    static constexpr float DAMPING_FREQ = 4000.0f; // LPF cutoff for feedback path
 
-    // Tap delays for spring "boing"
-    daisysp::DelayLine<float, 2400> tap_delay_1_;
-    daisysp::DelayLine<float, 2400> tap_delay_2_;
-
-    // Pre-delay buffer
-    daisysp::DelayLine<float, 256> pre_delay_;  // ~5ms max
-
-    struct AllPassFilter {
-        daisysp::DelayLine<float, 512> delay;
-        float feedback;
-
-        void Init(float fb) {
-            delay.Init();
-            feedback = fb;
-        }
-
-        float Process(float in) {
-            float read = delay.Read();
-            float out = -in + read;
-            delay.Write(in + read * feedback);
-            return out;
-        }
-    };
-
-    std::array<AllPassFilter, kNumAllPassFilters> allpass_filters_;
-
-    // Low-pass filter for high-frequency damping
-    daisysp::OnePole lp_filter_;
-
-    float decay_ = 0.65f;     // Feedback gain
-    float mix_ = 0.5f;        // Wet/dry mix (0-1)
-    float drive_ = 1.4f;      // Input drive for spring character
-    float sample_rate_ = 48000.0f;
+    float feedback_ = 0.0f;       // Current feedback sample
+    float dampingState_ = 0.0f;   // One-pole LPF state
+    float dampingCoeff_ = 0.0f;   // LPF coefficient (computed in Init)
 };
 
 } // namespace flick

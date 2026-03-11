@@ -9,6 +9,7 @@
                 "${workspaceFolder}/libDaisy/Drivers/STM32H7xx_HAL_Driver/Inc",
                 "${workspaceFolder}/libDaisy/Drivers/CMSIS-Device/ST/STM32H7xx/Include",
                 "${workspaceFolder}/libDaisy/Drivers/CMSIS_5/CMSIS/Core/Include",
+                "${workspaceFolder}/libDaisy/Drivers/CMSIS-DSP/Include",
                 "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Host_Library/Core/Inc",
                 "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
                 "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
@@ -20,6 +21,7 @@
                 "STM32H750xx",
                 "USE_HAL_DRIVER",
                 "CORE_CM7",
+                "USE_ARM_DSP",
                 "__STATIC_INLINE=static inline",
                 "__weak=__attribute__((weak))"
             ],
@@ -37,6 +39,7 @@
                 "${workspaceFolder}/libDaisy/Drivers/STM32H7xx_HAL_Driver/Inc",
                 "${workspaceFolder}/libDaisy/Drivers/CMSIS-Device/ST/STM32H7xx/Include",
                 "${workspaceFolder}/libDaisy/Drivers/CMSIS_5/CMSIS/Core/Include",
+                "${workspaceFolder}/libDaisy/Drivers/CMSIS-DSP/Include",
                 "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Host_Library/Core/Inc",
                 "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
                 "${workspaceFolder}/libDaisy/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc",
@@ -48,6 +51,7 @@
                 "STM32H750xx",
                 "USE_HAL_DRIVER",
                 "CORE_CM7",
+                "USE_ARM_DSP",
                 "__STATIC_INLINE=static inline",
                 "__weak=__attribute__((weak))"
             ],

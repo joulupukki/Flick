@@ -17,103 +17,92 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "spring_reverb.h"
+#include "ir_data.h"
 #include <cmath>
+#include <cstring>
+
+// SDRAM buffers for convolution engine.
+// For a 170ms IR at 48kHz: (8160 + 127) / 128 = 64 partitions.
+// MAX_PARTITIONS is sized for headroom if we increase IR length later.
+#define DSY_SDRAM_BSS __attribute__((section(".sdram_bss")))
+
+static constexpr size_t MAX_PARTITIONS = 128;
+
+static float DSY_SDRAM_BSS irFreqBuf[MAX_PARTITIONS * CONV_FFT_SIZE];
+static float DSY_SDRAM_BSS fdlBuf[MAX_PARTITIONS * CONV_FFT_SIZE];
 
 namespace flick {
-
-// Define the static constants
-constexpr std::array<int, SpringReverb::kNumAllPassFilters> SpringReverb::kAllPassDelays;
 
 void SpringReverb::Init(float sample_rate) {
     sample_rate_ = sample_rate;
 
-    // Initialize pre-delay (~1.3ms)
-    pre_delay_.Init();
-    pre_delay_.SetDelay(64.0f);
+    // Initialize convolution engine with SDRAM buffers
+    convolution_.Init(MAX_PARTITIONS, irFreqBuf, fdlBuf);
 
-    // Initialize main delay (~50ms for spring length - more audible)
-    main_delay_.Init();
-    main_delay_.SetDelay(2400.0f);  // ~50ms at 48kHz
-
-    // Initialize tap delays for spring "boing"
-    tap_delay_1_.Init();
-    tap_delay_1_.SetDelay(600.0f);  // ~12.5ms
-    tap_delay_2_.Init();
-    tap_delay_2_.SetDelay(1200.0f); // ~25ms
-
-    // Initialize all-pass filters
-    for (auto& ap : allpass_filters_) {
-        ap.Init(0.5f);  // Lower feedback for stable dispersion
+    // Load the spring reverb IR (first IR in the collection)
+    using namespace ImpulseResponseData;
+    if (IR_COUNT > 0) {
+        const IRInfo& ir = ir_collection[0];
+        convolution_.Prepare(ir.data, ir.length);
     }
 
-    // Set all-pass delays
-    for (size_t i = 0; i < kNumAllPassFilters; ++i) {
-        allpass_filters_[i].delay.SetDelay(static_cast<float>(kAllPassDelays[i]));
-    }
+    // Compute one-pole LPF coefficient for feedback damping
+    // alpha = 1 - exp(-2pi * freq / samplerate)
+    dampingCoeff_ = 1.0f - expf(-6.2831853f * DAMPING_FREQ / sample_rate);
+    dampingState_ = 0.0f;
+    feedback_ = 0.0f;
 
-    // Initialize low-pass filter for damping (default 6kHz cutoff)
-    lp_filter_.Init();
-    lp_filter_.SetFrequency(6000.0f);
-}
-
-void SpringReverb::Clear() {
-    // Reset all delay line buffers to silence
-    pre_delay_.Reset();
-    main_delay_.Reset();
-    tap_delay_1_.Reset();
-    tap_delay_2_.Reset();
-    for (auto& ap : allpass_filters_) {
-        ap.delay.Reset();
-    }
-}
-
-void SpringReverb::Process(const float* in_left, const float* in_right,
-                           float* out_left, float* out_right, size_t size) {
-    for (size_t i = 0; i < size; ++i) {
-        ProcessSample(in_left[i], in_right[i], &out_left[i], &out_right[i]);
-    }
+    // Clear internal buffers
+    memset(inputBuf_, 0, sizeof(inputBuf_));
+    memset(outputBuf_, 0, sizeof(outputBuf_));
+    bufPos_ = 0;
 }
 
 void SpringReverb::ProcessSample(float in_left, float in_right, float* out_left, float* out_right) {
-    // Mix left and right input for mono processing
+    // Mix stereo to mono (spring reverb is inherently mono)
     float mono_in = (in_left + in_right) * 0.5f;
 
-    // Pre-delay and drive for spring character
-    pre_delay_.Write(mono_in);
-    float input = pre_delay_.Read() * drive_;
-    input = std::tanh(input);
+    // Add damped feedback from previous convolution output to extend the tail.
+    // Each recirculation passes through the IR again, adding ~170ms of decay.
+    inputBuf_[bufPos_] = mono_in + feedback_;
 
-    // Read from main delay (recirculating signal)
-    float recirc = main_delay_.Read();
+    // Read output from previous convolution result
+    float wet = outputBuf_[bufPos_];
 
-    // Apply damping (low-pass filter) to recirculating signal
-    float damped = lp_filter_.Process(recirc);
+    // Update feedback: low-pass filter the convolution output so highs
+    // decay faster than lows (natural spring reverb behavior)
+    dampingState_ += dampingCoeff_ * (wet - dampingState_);
+    feedback_ = dampingState_ * FEEDBACK;
 
-    // Calculate feedback
-    float feedback = damped * decay_;
+    bufPos_++;
 
-    // Add dispersion via all-pass chain
-    float dispersive = input;
-    for (auto& ap : allpass_filters_) {
-        dispersive = ap.Process(dispersive);
+    // When buffer is full, run convolution
+    if (bufPos_ >= CONV_PARTITION_SIZE) {
+        convolution_.ProcessBlock(inputBuf_, outputBuf_, CONV_PARTITION_SIZE);
+        bufPos_ = 0;
     }
 
-    // Write to main delay: dispersive input + feedback
-    main_delay_.Write(dispersive + feedback);
+    // The orchestrator attenuates reverb input by ~-20 dB to prevent
+    // feedback-based reverbs (plate/hall) from clipping. Convolution reverb
+    // is linear (no internal gain), so we compensate here.
+    wet *= 10.0f;
 
-    // Tap delays for spring "boing"
-    tap_delay_1_.Write(damped);
-    tap_delay_2_.Write(damped);
-    float tap1 = tap_delay_1_.Read();
-    float tap2 = tap_delay_2_.Read();
+    // Safety: prevent NaN from corrupting downstream effects
+    if (wet != wet) wet = 0.0f;
 
-    // Mix dry and wet signals
-    float dry = mono_in * (1.0f - mix_);
-    float wet = (0.55f * damped + 0.25f * tap1 + 0.20f * tap2) * mix_;
+    // Output mono wet signal to both channels
+    // (orchestrator handles dry/wet mixing)
+    *out_left = wet;
+    *out_right = wet;
+}
 
-    // Output to both channels
-    *out_left = dry + wet;
-    *out_right = dry + wet;
+void SpringReverb::Clear() {
+    convolution_.Reset();
+    memset(inputBuf_, 0, sizeof(inputBuf_));
+    memset(outputBuf_, 0, sizeof(outputBuf_));
+    bufPos_ = 0;
+    feedback_ = 0.0f;
+    dampingState_ = 0.0f;
 }
 
 } // namespace flick

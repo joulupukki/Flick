@@ -6,6 +6,10 @@ The Flick is a reverb, tremolo, and delay pedal. The original goal of this pedal
 
 **Platerra Reverb:** This is a plate reverb based on the Dattorro reverb.
 
+**Hall Reverb:** An 8-line feedback delay network with Hadamard mixing for dense, spacious hall sounds.
+
+**Spring Reverb:** Uses impulse response (IR) convolution to faithfully reproduce the sound of a real spring reverb tank. The IR is processed through a partitioned overlap-save FFT convolution engine adapted from [MuleBox](https://github.com/optilude/MuleBox), which keeps the CPU cost manageable on the STM32H750.
+
 **Tremolo:** Tremolo with smooth sine wave, harmonic tremolo, and square wave (opto-like) settings.
 
 **Delay:** Basic digital delay.
@@ -91,39 +95,136 @@ To exit factory reset mode without resetting. Power off the pedal and power it b
 
 Press and hold **both footswitches simultaneously** for 5 seconds to enter Program DFU mode. The lights will alternately flash 3 times when DFU mode is entered.
 
-### Build the Software
+## Building the Firmware
 
-```
+### Prerequisites
+
+- [Daisy Toolchain](https://github.com/electro-smith/DaisyWiki/wiki/1.-Setting-Up-Your-Development-Environment) (ARM GCC, Make)
+- Python 3 (for IR header generation)
+- SoX (for WAV resampling, only needed when changing the IR)
+
+### Initial Setup
+
+```bash
 # Clone the repository
-$ git clone https://github.com/joulupukki/Flick.git
-$ cd Flick
+git clone https://github.com/joulupukki/Flick.git
+cd Flick
 
 # Initialize and set up submodules
-$ git submodule update --init --recursive
+git submodule update --init --recursive
 
-# Build the daisy libraries (after installing the Daisy Toolchain):
+# Build the daisy libraries:
 #
-# IMPORTANT: If you are planning to build this for FunBox, replace the daisy_petal files in `libDaisy/src` with the files in the `platforms/funbox/required_daisy_mods/` directory to properly map controls on Funbox.
+# IMPORTANT: If you are planning to build this for FunBox, replace the
+# daisy_petal files in `libDaisy/src` with the files in the
+# `platforms/funbox/required_daisy_mods/` directory to properly map
+# controls on Funbox.
 
-$ make -C libDaisy
-$ make -C DaisySP
+make -C libDaisy OPT=-Os
+make -C DaisySP
+```
 
-# Build the Flick pedal firmware
-$ cd src
+### Build
 
-# Build for FunBox
-$ make
+```bash
+cd src
+
+# Build for FunBox (default)
+make
 
 # Build for Hothouse
-$ make PLATFORM=hothouse
+make PLATFORM=hothouse
 ```
 
-If you have an ST-Link, you can install the software easily like this:
-```
-$ make program
-```
+### First-Time Bootloader Setup
 
-If you only have USB, you'll need to put the Flick into DFU mode first and with it connected with a USB cable, you can then install the firmware by running:
-```
-$ make program-dfu
-```
+Flick uses the Daisy bootloader (`BOOT_SRAM` mode) so that the firmware
+and IR data can be stored in the 8 MB QSPI flash. The bootloader must
+be flashed once per device.
+
+**Option A - USB only:**
+1. Connect Daisy Seed via USB
+2. Enter STM DFU mode: hold the BOOT button on the Daisy Seed and press RESET, then release both
+3. Run `make program-boot`
+
+**Option B - Debug probe (no buttons needed):**
+1. Connect an STLINK debug probe
+2. Run `make program-boot-probe`
+
+### Flashing Firmware
+
+**Option A - USB only:**
+1. Enter Daisy bootloader: press RESET on the Daisy Seed (or hold both footswitches for 2 seconds)
+2. Within 2.5 seconds, run `make program-dfu` (or `make flash`)
+
+**Option B - Debug probe (no USB or buttons needed):**
+1. Connect STLINK debug probe (power the pedal via 9V or USB)
+2. Run `make program`
+
+### Changing the Spring Reverb IR
+
+The spring reverb uses a pre-recorded impulse response. To use a
+different IR:
+
+1. Place your `.wav` file in `src/irs/`. It should be mono, 48 kHz. If
+   it is a different sample rate, resample it first:
+   ```bash
+   sox input.wav -r 48000 src/irs/spring_reverb_48k.wav
+   ```
+
+2. Regenerate the IR data header:
+   ```bash
+   cd src
+   make update-irs
+   ```
+   This runs `tools/wav_to_ir_header.py` which trims the IR to 750 ms,
+   normalizes the frequency response, and generates `src/ir_data.h`.
+
+3. Rebuild and flash:
+   ```bash
+   make clean && make
+   make flash   # or make program
+   ```
+
+**IR length limit:** The IR data is stored in SRAM (copied from QSPI at
+boot). With the current firmware size, the maximum practical IR length
+is about 750 ms. Longer IRs can be used by reducing other code or
+by placing the IR data in a QSPI-resident section (requires custom
+binary generation).
+
+## Spring Reverb: Technical Approach
+
+The spring reverb uses **partitioned overlap-save FFT convolution** to
+apply a real spring reverb impulse response in real time. This is the
+same approach used in the [MuleBox](https://github.com/optilude/MuleBox)
+cabinet simulator project.
+
+### How it works
+
+1. A spring reverb impulse response (captured from a real spring tank)
+   is converted to a C++ header file at build time by
+   `tools/wav_to_ir_header.py`.
+
+2. At firmware startup, the IR is split into 128-sample partitions and
+   each partition is pre-FFT'd into SDRAM buffers.
+
+3. During audio processing, each 128-sample input block is FFT'd and
+   multiplied with all IR partition FFTs in the frequency domain. The
+   results are accumulated and inverse-FFT'd to produce the convolved
+   output.
+
+4. This approach reduces the CPU cost from ~122% (direct FIR) to
+   ~30-40% for a 750 ms IR, leaving headroom for the delay and tremolo
+   effects.
+
+### Key constraints
+
+- **Audio block size is 128 samples** (2.67 ms at 48 kHz). This is
+  required by the convolution engine's FFT partition size. The latency
+  is imperceptible for guitar effects.
+
+- **SRAM budget** limits the IR length. The firmware, IR data, and
+  runtime state must all fit within 480 KB of SRAM.
+
+- **SDRAM** is used for the convolution engine's working buffers
+  (pre-computed IR FFTs and frequency-domain delay line).
