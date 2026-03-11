@@ -23,31 +23,37 @@
 #define SPRING_REVERB_HPP
 
 #include "daisysp.h"
+#include "reverb_effect.h"
 #include <array>
 
 namespace flick {
 
-class SpringReverb {
+class SpringReverb : public ReverbEffect {
 public:
     SpringReverb() = default;
-    ~SpringReverb() = default;
+    ~SpringReverb() override = default;
 
-    void Init(float sample_rate);
+    // ReverbEffect interface
+    void Init(float sample_rate) override;
+    void ProcessSample(float in_left, float in_right, float* out_left, float* out_right) override;
+    void Clear() override;
 
-    void Process(const float* in_left, const float* in_right,
-                 float* out_left, float* out_right, size_t size);
+    // Override parameters this reverb uses
+    void SetDecay(float decay) override { decay_ = decay; }
+    void SetMix(float mix) override { mix_ = mix; }
+    void SetPreDelay(float pre_delay) override {
+        float samples = pre_delay * sample_rate_;
+        pre_delay_.SetDelay(samples);
+    }
 
-    void ProcessSample(float in_left, float in_right, float* out_left, float* out_right);
-
-    void SetDecay(float decay) { decay_ = decay; }
-    void SetMix(float mix) { mix_ = mix; }
+    // Spring-specific parameters (not in base class)
     void SetDamping(float damping_freq) {
         lp_filter_.SetFrequency(damping_freq);
     }
-    void SetPreDelay(float pre_delay_ms) {
-        float samples = pre_delay_ms * sample_rate_ / 1000.0f;
-        pre_delay_.SetDelay(samples);
-    }
+
+    // Block processing (non-virtual, spring-specific)
+    void Process(const float* in_left, const float* in_right,
+                 float* out_left, float* out_right, size_t size);
 
 private:
     static constexpr int kNumAllPassFilters = 4;

@@ -7,7 +7,7 @@ PLATFORM ?= funbox
 #USE_DAISYSP_LGPL=1
 
 # Base sources (common to all platforms)
-CPP_SOURCES = flick.cpp flick_oscillator.cpp hall_reverb.cpp spring_reverb.cpp daisy_hardware.cpp parameter_capture.cpp
+CPP_SOURCES = flick.cpp delay_effect.cpp tremolo_effect.cpp plate_reverb.cpp hall_reverb.cpp spring_reverb.cpp flick_oscillator.cpp daisy_hardware.cpp parameter_capture.cpp
 
 # Base includes
 C_INCLUDES = -I.. -I./PlateauNEVersio
@@ -32,6 +32,9 @@ CPP_SOURCES += PlateauNEVersio/Dattorro.cpp
 # Library Locations
 LIBDAISY_DIR = ../libDaisy
 DAISYSP_DIR = ../DaisySP
+
+# Optimise for size rather than speed (-O2 is the libDaisy default)
+OPT = -Os
 
 # Core location, and generic Makefile.
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core

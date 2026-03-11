@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#ifndef FLICK_FILTERS_HPP
+#define FLICK_FILTERS_HPP
+
 #include <math.h>
 
 struct LowPassFilter {
@@ -120,3 +123,5 @@ struct LowShelf {
         return y;
     }
 };
+
+#endif  // FLICK_FILTERS_HPP
