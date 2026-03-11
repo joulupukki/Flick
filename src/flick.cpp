@@ -245,7 +245,7 @@ constexpr DelayTimingMode kDelayTimingMap[] = {
 constexpr float kDelayTimingMultiplier[] = {
   0.75f,    // DELAY_TIMING_DOTTED_EIGHTH (index 0)
   1.0f,     // DELAY_TIMING_QUARTER (index 1)
-  0.6666f,  // DELAY_TIMING_TRIPLET (index 2, 2/3 — quarter note triplets)
+  0.3333f,  // DELAY_TIMING_TRIPLET (index 2, 1/3 — eighth note triplets)
 };
 
 // Phase inversion mode (Toggle Switch 2 in device settings)
