@@ -245,7 +245,7 @@ constexpr DelayTimingMode kDelayTimingMap[] = {
 constexpr float kDelayTimingMultiplier[] = {
   0.75f,    // DELAY_TIMING_DOTTED_EIGHTH (index 0)
   1.0f,     // DELAY_TIMING_QUARTER (index 1)
-  0.6666f,  // DELAY_TIMING_TRIPLET (index 2, 2/3 — quarter note triplets)
+  0.3333f,  // DELAY_TIMING_TRIPLET (index 2, 1/3 — eighth note triplets)
 };
 
 // Phase inversion mode (Toggle Switch 2 in device settings)
@@ -1357,6 +1357,9 @@ int main() {
   // Initialize Spring Reverb (IR convolution)
   spring_reverb.Init(hw.AudioSampleRate());
   spring_reverb.SetMix(1.0f);   // 100% wet - mixed by orchestrator via Knob 1
+
+  // Set default active reverb
+  current_reverb = &plate_reverb;
 
   // Set default active reverb
   current_reverb = &plate_reverb;
