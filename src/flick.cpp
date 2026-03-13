@@ -34,8 +34,7 @@
  *   - HarmonicTremolo: Band-split with opposite-phase modulation + EQ
  * - ReverbEffect:     Base class for reverb algorithms (reverb_effect.h)
  *   - PlateReverb:    Dattorro algorithm (plate_reverb.h/cpp)
- *   - HallReverb:     Schroeder algorithm (hall_reverb.h/cpp)
- *   - CloudReverb:    CloudSeed algorithm (cloud_reverb.h/cpp)
+ *   - CloudReverb:    CloudSeed algorithm (cloud_reverb.h/cpp) — used for both ambient and room
  *
  * ORCHESTRATOR RESPONSIBILITIES:
  * - Read hardware controls (knobs, switches, footswitches)
@@ -63,7 +62,6 @@
 #include "tremolo_effect.h"
 #include "reverb_effect.h"
 #include "plate_reverb.h"
-#include "hall_reverb.h"
 #include "cloud_reverb.h"
 #include "parameter_capture.h"
 #include <math.h>
@@ -79,7 +77,6 @@ using flick::SquareTremolo;
 using flick::HarmonicTremolo;
 using flick::ReverbEffect;
 using flick::PlateReverb;
-using flick::HallReverb;
 using flick::CloudReverb;
 using flick::Funbox;
 using flick::KnobCapture;
@@ -187,14 +184,14 @@ constexpr MonoStereoMode kMonoStereoMap[] = {
 enum ReverbType {
   REVERB_PLATE,
   REVERB_CLOUD,
-  REVERB_HALL,
+  REVERB_ROOM,
   REVERB_DEFAULT = REVERB_PLATE
 };
 
 constexpr ReverbType kReverbTypeMap[] = {
-  REVERB_CLOUD,   // UP (Hothouse) / RIGHT (Funbox)
-  REVERB_PLATE,   // MIDDLE
-  REVERB_HALL,    // DOWN (Hothouse) / LEFT (Funbox)
+  REVERB_CLOUD,   // UP (Hothouse) / RIGHT (Funbox) — CloudSeed ambient
+  REVERB_PLATE,   // MIDDLE — Dattorro plate
+  REVERB_ROOM,    // DOWN (Hothouse) / LEFT (Funbox) — CloudSeed room
 };
 
 // Reverb dry/wet knob behavior (Toggle Switch 1 in device settings)
@@ -318,7 +315,7 @@ struct BypassState {
 // ============================================================================
 // REVERB ORCHESTRATOR STATE
 // ============================================================================
-// The reverb effects (PlateReverb, HallReverb, SpringReverb) are DSP-only
+// The reverb effects (PlateReverb, CloudReverb) are DSP-only
 // modules with no knowledge of hardware. This orchestrator structure manages
 // UI state, mixing, current algorithm selection, and plate reverb parameter
 // values that are passed to the effects.
@@ -369,8 +366,8 @@ DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
 // current_reverb points to whichever reverb is active (plate/hall/spring)
 ReverbEffect* current_reverb = nullptr;
 PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
-HallReverb hall_reverb;      // Schroeder algorithm (spacious)
-CloudReverb cloud_reverb;    // CloudSeed algorithm (ambient, dreamy)
+CloudReverb cloud_reverb;    // CloudSeed ambient (Rubi-Ka Fields)
+CloudReverb cloud_reverb_room; // CloudSeed room (Small Room)
 
 // Tremolo effects (polymorphic - switch at runtime)
 TremoloEffect* current_tremolo = nullptr;
@@ -1193,20 +1190,13 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       case REVERB_CLOUD:
         current_reverb = &cloud_reverb;
         break;
-      case REVERB_HALL:
-        current_reverb = &hall_reverb;
+      case REVERB_ROOM:
+        current_reverb = &cloud_reverb_room;
         break;
     }
 
     // Process reverb via polymorphic interface
     current_reverb->ProcessSample(left_input * gain, right_input * gain, &rev_l, &rev_r);
-
-    // Apply algorithm-specific gain adjustments
-    if (reverb.current_type == REVERB_HALL) {
-      // Make hall reverb louder to match the mix knob expectations
-      rev_l *= 4.0f;
-      rev_r *= 4.0f;
-    }
 
     if (!bypass.reverb) {
       // left_output = ((left_input * reverb.dry * 0.1) + (verb.getLeftOutput() * reverb.wet * clearPopCancelValue));
@@ -1352,12 +1342,12 @@ int main() {
   plate_reverb.Init(hw.AudioSampleRate());
   updatePlateReverbParameters();
 
-  // Initialize Hall Reverb (Schroeder)
-  hall_reverb.Init(hw.AudioSampleRate());
-  hall_reverb.SetDecay(0.95f); // Higher feedback for longer hall decay
-
-  // Initialize Cloud Reverb (CloudSeed algorithm)
+  // Initialize CloudSeed Reverbs (shared pool, first Init() sets up shared resources)
   cloud_reverb.Init(hw.AudioSampleRate());
+  cloud_reverb.SetPreset(5);       // Rubi-Ka Fields (ambient, spacious)
+  cloud_reverb_room.Init(hw.AudioSampleRate());
+  cloud_reverb_room.SetPreset(6);  // Small Room base, stretched into hall character
+  cloud_reverb_room.SetDecay(0.4f);  // Longer tail (was 0.30 — very short)
 
   // Set default active reverb
   current_reverb = &plate_reverb;

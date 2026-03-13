@@ -50,33 +50,37 @@ void* custom_pool_allocate(size_t size) {
 
 namespace flick {
 
+// Shared resources initialized once across all CloudReverb instances.
+// The SDRAM pool, FPU mode, and lookup tables are shared — each instance's
+// ReverbController allocates sequentially from the same pool.
+static bool s_shared_init_done = false;
+
 void CloudReverb::Init(float sample_rate) {
     sample_rate_ = sample_rate;
 
-    // Enable Flush-to-Zero (FTZ) and Default NaN (DN) modes on the FPU.
-    // This prevents denormal floats (tiny values near zero) from causing
-    // massive CPU slowdowns in the reverb feedback paths. Standard practice
-    // for real-time audio on ARM Cortex-M7.
-    uint32_t fpscr = __get_FPSCR();
-    fpscr |= (1 << 24) | (1 << 25);  // FZ bit (24) + DN bit (25)
-    __set_FPSCR(fpscr);
+    if (!s_shared_init_done) {
+        // Enable Flush-to-Zero (FTZ) and Default NaN (DN) modes on the FPU.
+        // Prevents denormal floats from causing CPU slowdowns in feedback paths.
+        uint32_t fpscr = __get_FPSCR();
+        fpscr |= (1 << 24) | (1 << 25);  // FZ bit (24) + DN bit (25)
+        __set_FPSCR(fpscr);
 
-    // Zero the SDRAM pool before use
-    memset(cloud_pool, 0, CLOUD_POOL_SIZE);
-    cloud_pool_index = 0;
+        // Zero the SDRAM pool before use
+        memset(cloud_pool, 0, CLOUD_POOL_SIZE);
+        cloud_pool_index = 0;
 
-    // Initialize CloudSeed lookup tables (must be done before constructing controller)
-    AudioLib::ValueTables::Init();
-    CloudSeed::FastSin::Init();
+        // Initialize CloudSeed lookup tables (shared across all instances)
+        AudioLib::ValueTables::Init();
+        CloudSeed::FastSin::Init();
 
-    // Construct the reverb controller using placement new in the pool
-    // (ReverbController itself is small, but its ReverbChannels allocate from the pool)
+        s_shared_init_done = true;
+    }
+
+    // Construct the reverb controller — allocates from the shared SDRAM pool
     controller_ = new CloudSeed::ReverbController((int)sample_rate);
     controller_->ClearBuffers();
-
-    // Default to Rubi-Ka Fields (ambient, spacious)
-    controller_->SetPreset(5);
     applyFlickOverrides();
+    // Caller should call SetPreset() after Init() to select a preset.
 }
 
 void CloudReverb::ProcessSample(float in_L, float in_R,

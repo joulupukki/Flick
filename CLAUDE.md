@@ -69,7 +69,17 @@ The audio callback processes samples in this order:
 
 Three reverb algorithms selectable via Toggle Switch 1 in normal mode:
 
-**Plate Reverb** (Dattorro Algorithm)
+**Cloud Reverb — Ambient** (CloudSeed Algorithm, Toggle UP/RIGHT)
+- Source: [cloud_reverb.h](src/cloud_reverb.h) / [cloud_reverb.cpp](src/cloud_reverb.cpp)
+- Based on CloudSeed by ValdemarOrn (MIT license), ported to Daisy by erwincoumans/GuitarML
+- Algorithm files in [src/CloudSeed/](src/CloudSeed/)
+- Preset: Rubi-Ka Fields (ambient, spacious, long decay)
+- Stereo with 1 delay line per channel, decorrelated via CrossSeed parameter
+- Uses shared 8MB SDRAM pool for delay buffers
+- Multitap early reflections + allpass diffusion + late reverb delay line
+- Block processing (8 samples) with FTZ mode for CPU efficiency
+
+**Plate Reverb** (Dattorro Algorithm, Toggle MIDDLE)
 - Source: [PlateauNEVersio/Dattorro.cpp](src/PlateauNEVersio/Dattorro.cpp)
 - Based on Jon Dattorro's 1997 reverb paper
 - Uses SDRAM for large delay buffers
@@ -82,21 +92,11 @@ Three reverb algorithms selectable via Toggle Switch 1 in normal mode:
   - Decay control
 - Editable parameters saved to QSPI flash
 
-**Hall Reverb** (Schroeder Algorithm)
-- Source: [hall_reverb.h](src/hall_reverb.h) / [hall_reverb.cpp](src/hall_reverb.cpp)
-- 4 comb filters with damping
-- 2 all-pass filters
-- Low-pass filtering for natural decay
-- Longer delay times (~50-68ms) for hall character
-
-**Spring Reverb** (Digital Waveguide)
-- Source: [spring_reverb.h](src/spring_reverb.h) / [spring_reverb.cpp](src/spring_reverb.cpp)
-- Emulates 1960s Fender Deluxe Reverb
-- 4 all-pass filters (short delays ~2.5-10ms)
-- Main delay for recirculation
-- Tap delays for "boing" character
-- Pre-delay buffer
-- Drive parameter for spring saturation
+**Cloud Reverb — Room** (CloudSeed Algorithm, Toggle DOWN/LEFT)
+- Source: [cloud_reverb.h](src/cloud_reverb.h) / [cloud_reverb.cpp](src/cloud_reverb.cpp)
+- Same CloudSeed engine as ambient, separate instance with different preset
+- Preset: Small Room with extended decay for hall character
+- Shares SDRAM pool and lookup tables with the ambient CloudReverb instance
 
 #### 2. Tremolo System
 
@@ -279,7 +279,8 @@ make PLATFORM=hothouse
 
 **Sources:**
 - Core: `flick.cpp`, `daisy_hardware.cpp`, `flick_oscillator.cpp`
-- Reverbs: `hall_reverb.cpp`, `spring_reverb.cpp`
+- Reverbs: `cloud_reverb.cpp`, `plate_reverb.cpp`
+- CloudSeed: CloudSeed algorithm files (`FastSin.cpp`, `AudioLib/Biquad.cpp`, `AudioLib/ShaRandom.cpp`, `AudioLib/ValueTables.cpp`, `Utils/Sha256.cpp`)
 - PlateauNEVersio: Dattorro implementation and dependencies
 
 **Dependencies:**
@@ -296,7 +297,9 @@ make PLATFORM=hothouse
 
 **SDRAM Usage:**
 - Delay lines (2 seconds × 2 channels @ 48kHz)
-- Plate reverb buffers (50 InterpDelay buffers)
+- Plate reverb buffers (50 InterpDelay buffers, ~28.8 MB)
+- CloudSeed shared pool (8 MB — two CloudReverb instances allocate sequentially)
+- CloudSeed ValueTables (3 lookup tables, ~48 KB) and FastSin (128 KB)
 
 **Flash Usage:**
 - Persistent settings in QSPI
@@ -377,11 +380,24 @@ src/
 │
 ├── reverb_effect.h              # Reverb base class (polymorphic interface)
 ├── plate_reverb.h/cpp           # Plate reverb (Dattorro algorithm)
-├── hall_reverb.h/cpp            # Hall reverb (Schroeder algorithm)
-├── spring_reverb.h/cpp          # Spring reverb (digital waveguide)
+├── cloud_reverb.h/cpp           # CloudSeed reverb adapter (ambient + room)
 │
 ├── flick_oscillator.h/cpp       # LFO/oscillator (used by tremolo effects)
 ├── flick_filters.hpp            # DSP filter implementations
+│
+├── CloudSeed/                   # CloudSeed algorithm (MIT license, adapted for Flick)
+│   ├── ReverbController.h       # Stereo controller, presets, parameter scaling
+│   ├── ReverbChannel.h          # Per-channel processing (1 delay line per channel)
+│   ├── AllpassDiffuser.h        # Cascaded allpass chain (2 stages max)
+│   ├── MultitapDiffuser.h       # Early reflections (up to 50 taps)
+│   ├── ModulatedAllpass.h       # Individual modulated allpass filter
+│   ├── ModulatedDelay.h         # Delay with sinusoidal LFO modulation
+│   ├── DelayLine.h              # Late reverb line (delay + diffuser + filters)
+│   ├── FastSin.h/cpp            # Fast sine lookup table (SDRAM)
+│   ├── Parameter.h              # Parameter enum
+│   ├── Utils.h                  # Buffer utilities
+│   ├── AudioLib/                # Biquad filters, ShaRandom, ValueTables, Lp1/Hp1
+│   └── Utils/                   # SHA-256 implementation (for seed randomization)
 │
 └── PlateauNEVersio/             # Third-party Dattorro implementation
     ├── Dattorro.hpp/cpp         # Plate reverb core (wrapped by PlateReverb)
@@ -407,7 +423,7 @@ class SineTremolo : public TremoloEffect { /* smooth */ };
 class SquareTremolo : public TremoloEffect { /* choppy */ };
 class HarmonicTremolo : public TremoloEffect { /* band-split */ };
 
-// Reverb: Base class with 3 derived algorithms
+// Reverb: Base class with 2 derived algorithms
 class ReverbEffect {
   virtual void ProcessSample(...) = 0;
   virtual void SetDecay(float decay) {}  // Optional (no-op default)
@@ -415,8 +431,7 @@ class ReverbEffect {
   // ... more optional algorithm-specific parameters
 };
 class PlateReverb : public ReverbEffect { /* Dattorro */ };
-class HallReverb : public ReverbEffect { /* Schroeder */ };
-class SpringReverb : public ReverbEffect { /* waveguide */ };
+class CloudReverb : public ReverbEffect { /* CloudSeed — 2 instances: ambient + room */ };
 
 // Delay: Single class (no polymorphism needed)
 class DelayEffect {
