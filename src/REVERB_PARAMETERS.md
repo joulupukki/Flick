@@ -1,6 +1,41 @@
-# CloudSeed Reverb Parameters Reference
+# Reverb Parameters Reference
 
-The Flick pedal uses the **CloudSeed** reverb algorithm for its "Ambient" and "Room" reverb modes. Both modes use the same underlying engine but are initialized with different parameter sets.
+## Unified Reverb Edit Mode
+
+All three reverb types share 5 editable parameters via the reverb edit mode (long-press FSW1). Each reverb type stores its own parameter values in flash.
+
+### Edit Mode Knob Mapping
+
+| Knob | Label | Plate (Dattorro) | CloudSeed (Ambient + Room) |
+|------|-------|-------------------|---------------------------|
+| Knob 2 | **Pre-delay** | `setPreDelay()` (scaled 0.25x) | `Parameter::PreDelay` (0-1000ms) |
+| Knob 3 | **Decay** | `setDecay()` (tail length) | `Parameter::LineDecay` (0.05-60s) |
+| Knob 4 | **Tone** | `setTankFilterHighCutFrequency()` (brightness) | `Parameter::PostCutoffFrequency` (400-20kHz) |
+| Knob 5 | **Modulation** | Combined mod speed+depth (0.1-0.5 each, shape=0.25) | `Parameter::LineModAmount` (LFO depth) |
+| Knob 6 | **Diffusion** | `setTankDiffusion()` (density) | `Parameter::LateDiffusionFeedback` |
+
+Toggle switches are ignored during edit mode.
+
+### Default Values Per Reverb
+
+| Parameter | Ambient | Plate | Room |
+|-----------|---------|-------|------|
+| Pre-delay | 0.0 | 0.0 | 0.0 |
+| Decay | 0.83 | 0.8 | 0.4 |
+| Tone | 0.8 | 0.725 | 0.8 |
+| Modulation | 0.055 | 0.0 | 0.19 |
+| Diffusion | 0.715 | 0.85 | 0.595 |
+
+### Hardcoded Plate Parameters (no longer editable)
+
+- Input high-cut filter: 7.25 (pitch value)
+- Tank modulation shape: 0.25
+
+---
+
+## CloudSeed Preset Parameter Reference
+
+The Flick pedal uses the **CloudSeed** algorithm for its "Ambient" and "Room" reverb modes. Both modes use the same underlying engine but are initialized with different parameter sets.
 
 In the code:
 *   **Ambient (Rubi-Ka Fields):** `initFactoryRubiKaFields()` (Preset 5)
