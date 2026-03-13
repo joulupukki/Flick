@@ -16,16 +16,17 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// IR-based spring reverb using partitioned overlap-save convolution.
-// Uses a pre-recorded spring reverb impulse response (~170ms) for the
-// characteristic spring sound. A feedback loop with low-pass damping
-// extends the tail beyond the IR length.
+// Hybrid IR + FDN spring reverb.
+// Uses a pre-recorded impulse response (~170ms) for authentic spring character,
+// followed by a 4-line Feedback Delay Network that extends the tail to ~1-2s.
 
 #ifndef SPRING_REVERB_HPP
 #define SPRING_REVERB_HPP
 
 #include "reverb_effect.h"
 #include "non_uniform_convolution_engine.h"
+#include "daisysp.h"
+#include <array>
 
 namespace flick {
 
@@ -39,21 +40,52 @@ public:
     void Clear() override;
 
 private:
+    // --- IR convolution ---
     NonUniformConvolutionEngine convolution_;
-
     float inputBuf_[NUCONV_BLOCK_SIZE];
     float outputBuf_[NUCONV_BLOCK_SIZE];
     size_t bufPos_ = 0;
 
-    // Feedback recirculation to extend the reverb tail beyond the IR length.
-    static constexpr float FEEDBACK = 0.5f;
-    static constexpr float DAMPING_FREQ = 3500.0f;
+    // --- Late tail FDN ---
+    static constexpr int kNumFdnLines = 4;
+    static constexpr int kMaxFdnDelay = 3600;
+    static constexpr float kHadamard4Norm = 0.5f; // 1/sqrt(4)
 
-    float feedback_ = 0.0f;
-    float dampingState_ = 0.0f;
-    float dampingCoeff_ = 0.0f;
+    static constexpr int kFdnDelays[kNumFdnLines] = {1361, 1873, 2657, 3547};
 
-    float sample_rate_ = 48000.0f;
+    // Input diffusion allpasses (smear conv output before FDN)
+    static constexpr int kNumInputAP = 2;
+    static constexpr int kMaxAPDelay = 200;
+    static constexpr int kInputAPDelays[kNumInputAP] = {113, 199};
+    static constexpr float kAPCoeff = 0.6f;
+
+    // FDN tuning constants
+    static constexpr float kFdnDecay = 0.90f;        // ~1.5s RT60
+    static constexpr float kFdnDampingFreq = 3000.0f; // Dark spring tail
+    static constexpr float kFdnInputGain = 0.25f;     // Conv output → FDN
+    static constexpr float kFdnOutputGain = 0.7f;     // FDN contribution to mix
+
+    struct AllPassFilter {
+        daisysp::DelayLine<float, kMaxAPDelay> delay;
+        float coeff = kAPCoeff;
+
+        void Init(int delay_samples) {
+            delay.Init();
+            delay.SetDelay(static_cast<float>(delay_samples));
+            coeff = kAPCoeff;
+        }
+
+        float Process(float in) {
+            float read = delay.Read();
+            delay.Write(in + read * coeff);
+            return -in * coeff + read;
+        }
+    };
+
+    std::array<daisysp::OnePole, kNumFdnLines> fdn_damping_;
+    std::array<AllPassFilter, kNumInputAP> input_ap_;
+
+    static void hadamard4(float* x);
 };
 
 } // namespace flick
