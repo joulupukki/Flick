@@ -150,7 +150,7 @@ constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet per
 
 // Tap tempo constants
 constexpr uint32_t TAP_TEMPO_TIMEOUT_MS = 4000; // Auto-exit after 4 seconds of no taps
-constexpr int TAP_FLASH_CALLBACKS = 300;         // ~50ms LED flash at 6000 callbacks/sec
+constexpr float TAP_FLASH_DURATION_MS = 50.0f;   // Duration of LED flash on each tap (ms)
 
 // Audio signal levels
 constexpr float MINUS_18DB_GAIN = 0.12589254f;
@@ -741,7 +741,7 @@ void registerTap() {
   }
 
   tap_tempo.last_tap_time = now;
-  tap_tempo.tap_flash_counter = TAP_FLASH_CALLBACKS;  // Trigger brief LED flash
+  tap_tempo.tap_flash_counter = (int)(TAP_FLASH_DURATION_MS * hw.AudioCallbackRate() / 1000.0f);  // Trigger brief LED flash
 }
 
 // ============================================================================

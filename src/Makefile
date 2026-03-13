@@ -89,7 +89,7 @@ flash: program-dfu
 PYTHON ?= python3
 
 update-irs:
-	$(PYTHON) ../tools/wav_to_ir_header.py "../src/irs/spring_reverb_48k.wav" -o ir_data.h --max-length 170
+	$(PYTHON) ../tools/wav_to_ir_header.py "../src/irs/Reverb_Dwell_10_Tone_10_48k.wav" -o ir_data.h --max-length 1000
 
 help:
 	@echo "Flick Build System"

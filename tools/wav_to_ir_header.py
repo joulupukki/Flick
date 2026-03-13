@@ -5,10 +5,9 @@ WAV to IR Header Converter
 Converts WAV files (impulse responses) to C++ header format for embedding
 in firmware. Originally from MuleBox, adapted for Flick.
 
-The default max IR length is 170ms (8160 samples at 48kHz = 64 convolution
-partitions). This is the maximum that fits within the Daisy Seed's CPU
-budget for real-time convolution alongside delay and tremolo effects.
-The reverb tail is extended beyond the IR length via feedback recirculation.
+The default max IR length is 2000ms (96000 samples at 48kHz). The non-uniform
+partitioned convolution engine supports IRs up to ~2.24 seconds while staying
+within the Daisy Seed's CPU budget alongside delay and tremolo effects.
 
 Usage:
     python3 wav_to_ir_header.py [wav_files...] -o output.h
@@ -28,7 +27,7 @@ from pathlib import Path
 
 # Constants
 SAMPLE_RATE = 48000
-MAX_IR_LENGTH_MS = 170  # Maximum IR length in milliseconds (CPU-limited by convolution engine)
+MAX_IR_LENGTH_MS = 2000  # Maximum IR length in milliseconds (non-uniform partitioned convolution supports up to ~2.24s)
 MAX_IR_SAMPLES = int((MAX_IR_LENGTH_MS / 1000.0) * SAMPLE_RATE)  # 8,160 samples
 MAX_IR_COUNT = 12
 

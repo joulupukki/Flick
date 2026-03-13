@@ -17,19 +17,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // IR-based spring reverb using partitioned overlap-save convolution.
-// Uses a pre-recorded spring reverb impulse response for realistic sound.
-// Convolution engine adapted from MuleBox (github.com/optilude/MuleBox).
-//
-// The IR captures the first ~170ms of a real spring reverb. To extend the
-// tail beyond the IR length, a feedback loop recirculates the convolution
-// output back into its input with low-pass damping (highs decay faster
-// than lows, mimicking real spring behavior).
+// Uses a pre-recorded spring reverb impulse response (~170ms) for the
+// characteristic spring sound. A feedback loop with low-pass damping
+// extends the tail beyond the IR length.
 
 #ifndef SPRING_REVERB_HPP
 #define SPRING_REVERB_HPP
 
 #include "reverb_effect.h"
-#include "convolution_engine.h"
+#include "non_uniform_convolution_engine.h"
 
 namespace flick {
 
@@ -38,32 +34,26 @@ public:
     SpringReverb() = default;
     ~SpringReverb() override = default;
 
-    // ReverbEffect interface
     void Init(float sample_rate) override;
     void ProcessSample(float in_left, float in_right, float* out_left, float* out_right) override;
     void Clear() override;
 
-    // SetMix inherited from ReverbEffect (used by orchestrator for dry/wet)
-    // All other parameter setters (SetDecay, SetPreDelay, etc.) use
-    // inherited no-op defaults since the IR captures these characteristics.
-
 private:
-    ConvolutionEngine convolution_;
+    NonUniformConvolutionEngine convolution_;
 
-    // Internal buffering: accumulate samples until we have a full block
-    // for the convolution engine (CONV_PARTITION_SIZE = 128 samples).
-    float inputBuf_[CONV_PARTITION_SIZE];
-    float outputBuf_[CONV_PARTITION_SIZE];
+    float inputBuf_[NUCONV_BLOCK_SIZE];
+    float outputBuf_[NUCONV_BLOCK_SIZE];
     size_t bufPos_ = 0;
 
     // Feedback recirculation to extend the reverb tail beyond the IR length.
-    // Each round trip through the IR adds another ~170ms of tail.
-    static constexpr float FEEDBACK = 0.5f;      // Feedback amount (0=none, <1=stable)
-    static constexpr float DAMPING_FREQ = 4000.0f; // LPF cutoff for feedback path
+    static constexpr float FEEDBACK = 0.5f;
+    static constexpr float DAMPING_FREQ = 3500.0f;
 
-    float feedback_ = 0.0f;       // Current feedback sample
-    float dampingState_ = 0.0f;   // One-pole LPF state
-    float dampingCoeff_ = 0.0f;   // LPF coefficient (computed in Init)
+    float feedback_ = 0.0f;
+    float dampingState_ = 0.0f;
+    float dampingCoeff_ = 0.0f;
+
+    float sample_rate_ = 48000.0f;
 };
 
 } // namespace flick
