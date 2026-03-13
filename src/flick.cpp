@@ -35,7 +35,7 @@
  * - ReverbEffect:     Base class for reverb algorithms (reverb_effect.h)
  *   - PlateReverb:    Dattorro algorithm (plate_reverb.h/cpp)
  *   - HallReverb:     Schroeder algorithm (hall_reverb.h/cpp)
- *   - SpringReverb:   Digital waveguide (spring_reverb.h/cpp)
+ *   - CloudReverb:    CloudSeed algorithm (cloud_reverb.h/cpp)
  *
  * ORCHESTRATOR RESPONSIBILITIES:
  * - Read hardware controls (knobs, switches, footswitches)
@@ -64,7 +64,7 @@
 #include "reverb_effect.h"
 #include "plate_reverb.h"
 #include "hall_reverb.h"
-#include "spring_reverb.h"
+#include "cloud_reverb.h"
 #include "parameter_capture.h"
 #include <math.h>
 
@@ -80,7 +80,7 @@ using flick::HarmonicTremolo;
 using flick::ReverbEffect;
 using flick::PlateReverb;
 using flick::HallReverb;
-using flick::SpringReverb;
+using flick::CloudReverb;
 using flick::Funbox;
 using flick::KnobCapture;
 using flick::SwitchCapture;
@@ -186,13 +186,13 @@ constexpr MonoStereoMode kMonoStereoMap[] = {
 // Reverb algorithm selection (Toggle Switch 1 in normal mode)
 enum ReverbType {
   REVERB_PLATE,
-  REVERB_SPRING,
+  REVERB_CLOUD,
   REVERB_HALL,
   REVERB_DEFAULT = REVERB_PLATE
 };
 
 constexpr ReverbType kReverbTypeMap[] = {
-  REVERB_SPRING,  // UP (Hothouse) / RIGHT (Funbox)
+  REVERB_CLOUD,   // UP (Hothouse) / RIGHT (Funbox)
   REVERB_PLATE,   // MIDDLE
   REVERB_HALL,    // DOWN (Hothouse) / LEFT (Funbox)
 };
@@ -370,7 +370,7 @@ DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
 ReverbEffect* current_reverb = nullptr;
 PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
 HallReverb hall_reverb;      // Schroeder algorithm (spacious)
-SpringReverb spring_reverb;  // Digital waveguide (vintage character)
+CloudReverb cloud_reverb;    // CloudSeed algorithm (ambient, dreamy)
 
 // Tremolo effects (polymorphic - switch at runtime)
 TremoloEffect* current_tremolo = nullptr;
@@ -1190,8 +1190,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         current_reverb = &plate_reverb;
         updatePlateReverbParameters(); // Update plate-specific parameters
         break;
-      case REVERB_SPRING:
-        current_reverb = &spring_reverb;
+      case REVERB_CLOUD:
+        current_reverb = &cloud_reverb;
         break;
       case REVERB_HALL:
         current_reverb = &hall_reverb;
@@ -1356,11 +1356,8 @@ int main() {
   hall_reverb.Init(hw.AudioSampleRate());
   hall_reverb.SetDecay(0.95f); // Higher feedback for longer hall decay
 
-  // Initialize Spring Reverb (Digital Waveguide)
-  spring_reverb.Init(hw.AudioSampleRate());
-  spring_reverb.SetDecay(0.7f); // Spring decay
-  spring_reverb.SetMix(1.0f);   // 100% wet - it'll be mixed with Knob 1
-  spring_reverb.SetDamping(7000.0f); // High-frequency damping
+  // Initialize Cloud Reverb (CloudSeed algorithm)
+  cloud_reverb.Init(hw.AudioSampleRate());
 
   // Set default active reverb
   current_reverb = &plate_reverb;

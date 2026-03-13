@@ -1,0 +1,84 @@
+#pragma once
+
+#include <cmath>
+
+// Flick: use float pi constant instead of double macro
+static constexpr float kHp1Pi = 3.14159265f;
+
+namespace AudioLib
+{
+	class Hp1
+	{
+	private:
+		float fs;
+		float b0, a1;
+		float lpOut;
+		float cutoffHz;
+
+	public:
+		float Output;
+
+	public:
+		Hp1(float fs)
+		{
+			this->lpOut = 0;
+			this->fs = fs;
+		}
+
+		float GetSamplerate()
+		{
+			return fs;
+		}
+
+		void SetSamplerate(float samplerate)
+		{
+			fs = samplerate;
+		}
+
+		float GetCutoffHz()
+		{
+			return cutoffHz;
+		}
+
+		void SetCutoffHz(float hz)
+		{
+			cutoffHz = hz;
+			Update();
+		}
+
+		void Update()
+		{
+			// Prevent going over the Nyquist frequency
+			if (cutoffHz >= fs * 0.5f) // Flick: double→float
+				cutoffHz = fs * 0.499f; // Flick: double→float
+
+			auto x = 2.0f * kHp1Pi * cutoffHz / fs; // Flick: use kHp1Pi, double→float
+			auto nn = (2.0f - cosf(x)); // Flick: cos→cosf, double→float
+			auto alpha = nn - sqrtf(nn * nn - 1.0f); // Flick: sqrt→sqrtf, double→float
+
+			a1 = alpha;
+			b0 = 1.0f - alpha; // Flick: double→float
+		}
+
+		float Process(float input)
+		{
+			if (input == 0 && lpOut < 0.000000000001f) // Flick: double→float
+			{
+				Output = 0;
+			}
+			else
+			{
+				lpOut = b0 * input + a1 * lpOut;
+				Output = input - lpOut;
+			}
+
+			return Output;
+		}
+
+		void Process(float* input, float* output, int len)
+		{
+			for (int i = 0; i < len; i++)
+				output[i] = Process(input[i]);
+		}
+	};
+}
