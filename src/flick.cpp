@@ -176,7 +176,6 @@ enum ReverbType {
   REVERB_PLATE,
   REVERB_CLOUD,
   REVERB_ROOM,
-  REVERB_DEFAULT = REVERB_PLATE
 };
 
 constexpr ReverbType kReverbTypeMap[] = {
