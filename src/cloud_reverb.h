@@ -34,6 +34,9 @@ namespace flick {
 
 class CloudReverb : public ReverbEffect {
 public:
+  // Cloud reverb type identifiers — used for type-aware preset switching.
+  enum CloudReverbType { CLOUD_AMBIENT = 0, CLOUD_ROOM = 1 };
+
   CloudReverb() = default;
   ~CloudReverb() override = default;
 
@@ -66,6 +69,10 @@ public:
   void RequestPresetSwitch(int preset_index, float output_gain);
   bool HasPendingPresetSwitch() const { return pending_preset_ >= 0; }
   void ApplyPendingPresetSwitch();
+
+  // High-level type switch — encapsulates type→preset mapping and gain.
+  // Call from audio callback; applied by main loop via ApplyPendingPresetSwitch().
+  void RequestTypeSwitch(CloudReverbType type);
 
 private:
   CloudSeed::ReverbController* controller_ = nullptr;

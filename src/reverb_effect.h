@@ -24,7 +24,7 @@ namespace flick {
 /**
  * Base class for reverb effects.
  *
- * Provides common interface for all reverb algorithms (plate, hall, spring).
+ * Provides common interface for all reverb algorithms (plate, CloudSeed ambient, CloudSeed room).
  * Uses virtual functions to allow runtime algorithm switching via base class pointers.
  *
  * Design pattern: Virtual methods with no-op defaults for algorithm-specific parameters.
@@ -57,13 +57,6 @@ public:
    */
   virtual void Clear() = 0;
 
-  /**
-   * Set reverb mix amount (common to all reverbs).
-   *
-   * @param mix Mix amount 0-1
-   */
-  virtual void SetMix(float mix) { mix_ = mix; }
-
   // Algorithm-specific parameters (no-op by default, override if needed)
 
   /**
@@ -74,53 +67,18 @@ public:
   virtual void SetDecay(float decay) {}
 
   /**
-   * Set diffusion amount (plate reverb only).
+   * Set diffusion amount.
    *
    * @param diffusion Diffusion 0-1
    */
   virtual void SetDiffusion(float diffusion) {}
 
   /**
-   * Set pre-delay time (plate/spring reverbs).
+   * Set pre-delay time.
    *
    * @param pre_delay Pre-delay in seconds
    */
   virtual void SetPreDelay(float pre_delay) {}
-
-  /**
-   * Set input high-cut filter frequency (plate reverb only).
-   *
-   * @param freq Cutoff frequency in Hz
-   */
-  virtual void SetInputHighCut(float freq) {}
-
-  /**
-   * Set tank high-cut filter frequency (plate reverb only).
-   *
-   * @param freq Cutoff frequency in Hz
-   */
-  virtual void SetTankHighCut(float freq) {}
-
-  /**
-   * Set tank modulation speed (plate reverb only).
-   *
-   * @param speed Modulation speed (scaled value)
-   */
-  virtual void SetTankModSpeed(float speed) {}
-
-  /**
-   * Set tank modulation depth (plate reverb only).
-   *
-   * @param depth Modulation depth (scaled value)
-   */
-  virtual void SetTankModDepth(float depth) {}
-
-  /**
-   * Set tank modulation shape (plate reverb only).
-   *
-   * @param shape Modulation shape parameter
-   */
-  virtual void SetTankModShape(float shape) {}
 
   /**
    * Set tone/brightness of reverb tail.
@@ -143,7 +101,6 @@ public:
   virtual void SetModulation(float mod) {}
 
 protected:
-  float mix_ = 1.0f;
   float sample_rate_ = 48000.0f;
 };
 

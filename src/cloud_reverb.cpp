@@ -198,6 +198,14 @@ void CloudReverb::ApplyPendingPresetSwitch() {
     pending_preset_ = -1;
 }
 
+void CloudReverb::RequestTypeSwitch(CloudReverbType type) {
+    if (type == CLOUD_AMBIENT) {
+        RequestPresetSwitch(5, 1.5f);
+    } else {
+        RequestPresetSwitch(6, 1.0f);
+    }
+}
+
 void CloudReverb::applyFlickOverrides() {
     // Flick's orchestrator handles dry/wet mixing externally via Knob 1 (reverb.wet).
     // CloudSeed's output formula is: dry*input + predelay*preOut + early*earlyOut + main*lateOut
@@ -219,7 +227,6 @@ void CloudReverb::applyFlickOverrides() {
         controller_->SetParameter(Parameter::CutoffEnabled, 1.0f);
         controller_->SetParameter(Parameter::HighShelfEnabled, 1.0f);
         controller_->SetParameter(Parameter::LateDiffusionStages, 0.71428573131561279f);  // 2 stages (max)
-        controller_->SetParameter(Parameter::LateDiffusionFeedback, 0.68f);
         controller_->SetParameter(Parameter::DiffusionFeedback, 0.72f);
     }
 }

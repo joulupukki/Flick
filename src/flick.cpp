@@ -329,6 +329,10 @@ struct ReverbOrchestrator {
   // Locked reverb type during edit mode (prevents switching mid-edit)
   ReverbType edit_type = REVERB_PLATE;
 
+  // Which CloudSeed preset is currently loaded (lags current_type until the
+  // main loop applies the deferred preset switch)
+  ReverbType loaded_cloud_type = REVERB_CLOUD;
+
   // Reverb knob mode (device setting - affects dry/wet mixing behavior)
   ReverbKnobMode knob_mode = REVERB_KNOB_DRY_WET_MIX;
 
@@ -373,7 +377,6 @@ DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
 ReverbEffect* current_reverb = nullptr;
 PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
 CloudReverb cloud_reverb;    // CloudSeed (single instance, switches preset for ambient/room)
-ReverbType active_cloud_type = REVERB_CLOUD;  // Which CloudSeed preset is loaded
 
 // Tremolo effects (polymorphic - switch at runtime)
 TremoloEffect* current_tremolo = nullptr;
@@ -593,7 +596,7 @@ void loadSettings() {
   // Apply loaded parameters to reverb effects. For CloudSeed, only apply
   // params matching the currently loaded preset (the other type's params are
   // stored in the ReverbOrchestrator and applied when the preset switches).
-  applyReverbEditParams(active_cloud_type, reverb.paramsForType(active_cloud_type));
+  applyReverbEditParams(reverb.loaded_cloud_type, reverb.paramsForType(reverb.loaded_cloud_type));
   applyReverbEditParams(REVERB_PLATE, reverb.plate);
 }
 
@@ -1139,6 +1142,25 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   float polarity_L = (polarity_mode == POLARITY_INVERT_LEFT) ? -1.0f : 1.0f;
   float polarity_R = (polarity_mode == POLARITY_INVERT_RIGHT) ? -1.0f : 1.0f;
 
+  // Resolve active reverb pointer once per callback (reverb.current_type does
+  // not change within a callback). For CloudSeed types, request a deferred
+  // preset switch if the loaded preset doesn't match the selected type.
+  switch (reverb.current_type) {
+    case REVERB_PLATE:
+      current_reverb = &plate_reverb;
+      break;
+    case REVERB_CLOUD:
+    case REVERB_ROOM:
+      current_reverb = &cloud_reverb;
+      if (reverb.current_type != reverb.loaded_cloud_type &&
+          !cloud_reverb.HasPendingPresetSwitch()) {
+        auto cloud_type = (reverb.current_type == REVERB_CLOUD)
+            ? CloudReverb::CLOUD_AMBIENT : CloudReverb::CLOUD_ROOM;
+        cloud_reverb.RequestTypeSwitch(cloud_type);
+      }
+      break;
+  }
+
   for (size_t i = 0; i < size; ++i) {
     float dry_L = in[0][i];
     float dry_R = in[1][i];
@@ -1196,24 +1218,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
     float gain = MINUS_18DB_GAIN * MINUS_20DB_GAIN * (1.0f + input_amplification * 7.0f) * clearPopCancelValue;
     float rev_l, rev_r;
-
-    // Switch active reverb algorithm based on toggle switch.
-    // Plate reverb uses its own instance; both CloudSeed reverb types share
-    // a single instance that switches preset via the main loop.
-    switch (reverb.current_type) {
-      case REVERB_PLATE:
-        current_reverb = &plate_reverb;
-        break;
-      case REVERB_CLOUD:
-      case REVERB_ROOM:
-        current_reverb = &cloud_reverb;
-        if (reverb.current_type != active_cloud_type) {
-          int preset = (reverb.current_type == REVERB_CLOUD) ? 5 : 6;
-          float gain = (reverb.current_type == REVERB_CLOUD) ? 1.5f : 1.0f;
-          cloud_reverb.RequestPresetSwitch(preset, gain);
-        }
-        break;
-    }
 
     // Process reverb via polymorphic interface
     current_reverb->ProcessSample(left_input * gain, right_input * gain, &rev_l, &rev_r);
@@ -1365,7 +1369,7 @@ int main() {
   cloud_reverb.Init(hw.AudioSampleRate());
   cloud_reverb.SetPreset(5);         // Start with Rubi-Ka Fields (ambient)
   cloud_reverb.SetOutputGain(1.5f);
-  active_cloud_type = REVERB_CLOUD;
+  reverb.loaded_cloud_type = REVERB_CLOUD;
 
   // Set default active reverb
   current_reverb = &plate_reverb;
@@ -1460,10 +1464,10 @@ int main() {
     // biquad coefficient recalculation — too expensive for the audio callback.
     if (cloud_reverb.HasPendingPresetSwitch()) {
       cloud_reverb.ApplyPendingPresetSwitch();
-      active_cloud_type = reverb.current_type;
+      reverb.loaded_cloud_type = reverb.current_type;
       // Re-apply saved edit params for the newly loaded preset
-      applyReverbEditParams(active_cloud_type,
-                            reverb.paramsForType(active_cloud_type));
+      applyReverbEditParams(reverb.loaded_cloud_type,
+                            reverb.paramsForType(reverb.loaded_cloud_type));
       cloud_reverb.ApplyPendingParams();
     }
     cloud_reverb.ApplyPendingParams();
