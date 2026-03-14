@@ -1302,7 +1302,7 @@ void runFactoryResetLoop() {
 
 int main() {
   hw.Init(true); // Init the CPU at full speed
-  hw.SetAudioBlockSize(8);  // Number of samples handled per callback
+  hw.SetAudioBlockSize(48);  // Number of samples handled per callback
   hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
 
   // Initialize LEDs

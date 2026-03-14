@@ -208,7 +208,7 @@ void CloudReverb::applyFlickOverrides() {
 
     // Force line count to match our TotalLineCount (1 per channel)
     // Presets have LineCount commented out, so this ensures it's set correctly.
-    controller_->SetParameter(Parameter::LineCount, 1.0f);
+    controller_->SetParameter(Parameter::LineCount, 2.0f);
 
     // Preset-specific overrides — applied here rather than editing CloudSeed source.
     // Preset 6 (Small Room): The factory preset has CutoffEnabled=0 and

@@ -33,9 +33,9 @@ namespace CloudSeed
 	class ReverbChannel
 	{
 	private:
-		// Flick: Reduced to 1 for stereo. erwincoumans found 2/channel caused underruns
-		// on the same STM32H750, even with CloudSeed as the only effect.
-		static const int TotalLineCount = 1;
+		// Flick: 2 lines/channel × 2 channels = 4 total (mono DaisyCloudSeed runs 5).
+		// Single-instance architecture (Phase 2) keeps SDRAM within 8MB pool.
+		static const int TotalLineCount = 2;
 
 		float parameters[(int)Parameter::Count]; // Flick: Was map<Parameter, float>
 		int samplerate;
