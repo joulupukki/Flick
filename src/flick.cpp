@@ -369,11 +369,11 @@ DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemL;
 DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
 
 // Reverb effects (polymorphic - algorithm selected at runtime via toggle switch)
-// current_reverb points to whichever reverb is active (plate/hall/spring)
+// current_reverb points to whichever reverb is active (plate or cloud)
 ReverbEffect* current_reverb = nullptr;
 PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
-CloudReverb ambient_reverb;    // CloudSeed ambient (Rubi-Ka Fields)
-CloudReverb room_reverb; // CloudSeed room (Small Room)
+CloudReverb cloud_reverb;    // CloudSeed (single instance, switches preset for ambient/room)
+ReverbType active_cloud_type = REVERB_CLOUD;  // Which CloudSeed preset is loaded
 
 // Tremolo effects (polymorphic - switch at runtime)
 TremoloEffect* current_tremolo = nullptr;
@@ -545,9 +545,9 @@ inline void updateReverbScales(MonoStereoMode mode) {
 void applyReverbEditParams(ReverbType type, const ReverbEditParams& params) {
   ReverbEffect* target = nullptr;
   switch (type) {
-    case REVERB_CLOUD: target = &ambient_reverb; break;
+    case REVERB_CLOUD: target = &cloud_reverb; break;
     case REVERB_PLATE: target = &plate_reverb; break;
-    case REVERB_ROOM:  target = &room_reverb; break;
+    case REVERB_ROOM:  target = &cloud_reverb; break;
   }
   if (target) {
     target->SetPreDelay(params.pre_delay);
@@ -590,10 +590,11 @@ void loadSettings() {
   bypass.delay = local_settings.bypass_delay;
   tap_tempo.tapped_delay_samples = local_settings.tapped_delay_samples;
 
-  // Apply loaded parameters to all three reverb effects
-  applyReverbEditParams(REVERB_CLOUD, reverb.ambient);
+  // Apply loaded parameters to reverb effects. For CloudSeed, only apply
+  // params matching the currently loaded preset (the other type's params are
+  // stored in the ReverbOrchestrator and applied when the preset switches).
+  applyReverbEditParams(active_cloud_type, reverb.paramsForType(active_cloud_type));
   applyReverbEditParams(REVERB_PLATE, reverb.plate);
-  applyReverbEditParams(REVERB_ROOM, reverb.room);
 }
 
 void saveReverbSettings() {
@@ -1196,18 +1197,21 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     float gain = MINUS_18DB_GAIN * MINUS_20DB_GAIN * (1.0f + input_amplification * 7.0f) * clearPopCancelValue;
     float rev_l, rev_r;
 
-    // Switch active reverb algorithm based on toggle switch
-    // Select active reverb algorithm (parameters already applied via loadSettings
-    // or edit mode; no need to re-apply every block)
+    // Switch active reverb algorithm based on toggle switch.
+    // Plate reverb uses its own instance; both CloudSeed reverb types share
+    // a single instance that switches preset via the main loop.
     switch (reverb.current_type) {
       case REVERB_PLATE:
         current_reverb = &plate_reverb;
         break;
       case REVERB_CLOUD:
-        current_reverb = &ambient_reverb;
-        break;
       case REVERB_ROOM:
-        current_reverb = &room_reverb;
+        current_reverb = &cloud_reverb;
+        if (reverb.current_type != active_cloud_type) {
+          int preset = (reverb.current_type == REVERB_CLOUD) ? 5 : 6;
+          float gain = (reverb.current_type == REVERB_CLOUD) ? 1.5f : 1.0f;
+          cloud_reverb.RequestPresetSwitch(preset, gain);
+        }
         break;
     }
 
@@ -1357,13 +1361,11 @@ int main() {
   // Initialize Plate Reverb (Dattorro)
   plate_reverb.Init(hw.AudioSampleRate());
 
-  // Initialize CloudSeed Reverbs (shared pool, first Init() sets up shared resources)
-  ambient_reverb.Init(hw.AudioSampleRate());
-  ambient_reverb.SetPreset(5);       // Rubi-Ka Fields (ambient, spacious)
-  ambient_reverb.SetOutputGain(1.5f); // Boost ambient output level to match plate reverb
-
-  room_reverb.Init(hw.AudioSampleRate());
-  room_reverb.SetPreset(6);  // Small Room base, stretched into hall character
+  // Initialize CloudSeed Reverb (single instance, preset switched at runtime)
+  cloud_reverb.Init(hw.AudioSampleRate());
+  cloud_reverb.SetPreset(5);         // Start with Rubi-Ka Fields (ambient)
+  cloud_reverb.SetOutputGain(1.5f);
+  active_cloud_type = REVERB_CLOUD;
 
   // Set default active reverb
   current_reverb = &plate_reverb;
@@ -1390,10 +1392,11 @@ int main() {
 
   // loadSettings() queues saved parameters for all three reverb effects.
   // ApplyPendingParams() then applies them synchronously (safe at startup
-  // since the audio callback hasn't started yet).
+  // since the audio callback hasn't started yet). Only the ambient preset
+  // is loaded at this point; room params will be applied when the user
+  // switches to the room reverb type.
   loadSettings();
-  ambient_reverb.ApplyPendingParams();
-  room_reverb.ApplyPendingParams();
+  cloud_reverb.ApplyPendingParams();
 
   Funbox::FootswitchCallbacks callbacks = {
     .HandleNormalPress = handleNormalPress,
@@ -1452,11 +1455,18 @@ int main() {
       runFactoryResetLoop();
     }
 
-    // Apply deferred CloudSeed parameter changes outside the audio ISR.
-    // CloudSeed's SetParameter triggers SHA-256 hashing and biquad coefficient
-    // recalculation — too expensive for the audio callback.
-    ambient_reverb.ApplyPendingParams();
-    room_reverb.ApplyPendingParams();
+    // Apply deferred CloudSeed preset switches and parameter changes outside
+    // the audio ISR. CloudSeed's SetParameter triggers SHA-256 hashing and
+    // biquad coefficient recalculation — too expensive for the audio callback.
+    if (cloud_reverb.HasPendingPresetSwitch()) {
+      cloud_reverb.ApplyPendingPresetSwitch();
+      active_cloud_type = reverb.current_type;
+      // Re-apply saved edit params for the newly loaded preset
+      applyReverbEditParams(active_cloud_type,
+                            reverb.paramsForType(active_cloud_type));
+      cloud_reverb.ApplyPendingParams();
+    }
+    cloud_reverb.ApplyPendingParams();
 
     hw.DelayMs(10);
   }
