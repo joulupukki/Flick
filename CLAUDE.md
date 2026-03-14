@@ -69,7 +69,17 @@ The audio callback processes samples in this order:
 
 Three reverb algorithms selectable via Toggle Switch 1 in normal mode:
 
-**Plate Reverb** (Dattorro Algorithm)
+**Cloud Reverb — Ambient** (CloudSeed Algorithm, Toggle UP/RIGHT)
+- Source: [cloud_reverb.h](src/cloud_reverb.h) / [cloud_reverb.cpp](src/cloud_reverb.cpp)
+- Based on CloudSeed by ValdemarOrn (MIT license), ported to Daisy by erwincoumans/GuitarML
+- Algorithm files in [src/CloudSeed/](src/CloudSeed/)
+- Preset: Rubi-Ka Fields (ambient, spacious, long decay)
+- Stereo with 1 delay line per channel, decorrelated via CrossSeed parameter
+- Uses shared 8MB SDRAM pool for delay buffers
+- Multitap early reflections + allpass diffusion + late reverb delay line
+- Block processing (8 samples) with FTZ mode for CPU efficiency
+
+**Plate Reverb** (Dattorro Algorithm, Toggle MIDDLE)
 - Source: [PlateauNEVersio/Dattorro.cpp](src/PlateauNEVersio/Dattorro.cpp)
 - Based on Jon Dattorro's 1997 reverb paper
 - Uses SDRAM for large delay buffers
@@ -82,21 +92,11 @@ Three reverb algorithms selectable via Toggle Switch 1 in normal mode:
   - Decay control
 - Editable parameters saved to QSPI flash
 
-**Hall Reverb** (Schroeder Algorithm)
-- Source: [hall_reverb.h](src/hall_reverb.h) / [hall_reverb.cpp](src/hall_reverb.cpp)
-- 4 comb filters with damping
-- 2 all-pass filters
-- Low-pass filtering for natural decay
-- Longer delay times (~50-68ms) for hall character
-
-**Spring Reverb** (Digital Waveguide)
-- Source: [spring_reverb.h](src/spring_reverb.h) / [spring_reverb.cpp](src/spring_reverb.cpp)
-- Emulates 1960s Fender Deluxe Reverb
-- 4 all-pass filters (short delays ~2.5-10ms)
-- Main delay for recirculation
-- Tap delays for "boing" character
-- Pre-delay buffer
-- Drive parameter for spring saturation
+**Cloud Reverb — Room** (CloudSeed Algorithm, Toggle DOWN/LEFT)
+- Source: [cloud_reverb.h](src/cloud_reverb.h) / [cloud_reverb.cpp](src/cloud_reverb.cpp)
+- Same CloudSeed engine as ambient, separate instance with different preset
+- Preset: Small Room with extended decay for hall character
+- Shares SDRAM pool and lookup tables with the ambient CloudReverb instance
 
 #### 2. Tremolo System
 
@@ -186,17 +186,16 @@ Simple digital delay with:
 **Reverb Edit Mode** (`PEDAL_MODE_EDIT_REVERB`)
 - Activated by long-press of Footswitch 1
 - Both LEDs flash together
+- Edits the **currently selected** reverb type (locked on entry — toggle switch 1 changes are ignored)
+- Each reverb type has its own saved parameter set
 - Uses parameter capture (soft takeover) to prevent sudden jumps
-- Knobs control reverb parameters:
-  - Knob 2: Pre-delay (scaled 0.25x)
-  - Knob 3: Decay
-  - Knob 4: Tank diffusion
-  - Knob 5: Input high-cut frequency (scaled 10x)
-  - Knob 6: Tank high-cut frequency (scaled 10x)
-- Toggle switches control modulation (speed/depth/shape):
-  - Switch 1: Tank Mod Speed (0.5, 0.25, 0.1 → scaled by `PLATE_TANK_MOD_SPEED_SCALE` when applied)
-  - Switch 2: Tank Mod Depth (0.5, 0.25, 0.1 → scaled by `PLATE_TANK_MOD_DEPTH_SCALE` when applied)
-  - Switch 3: Tank Mod Shape (0.5, 0.25, 0.1)
+- Unified knob mapping (5 knobs, no toggle switches):
+  - Knob 2: **Pre-delay** — Plate: pre-delay. CloudSeed: PreDelay
+  - Knob 3: **Decay** — Plate: decay. CloudSeed: LineDecay
+  - Knob 4: **Tone** — Plate: tank high-cut filter. CloudSeed: PostCutoffFrequency
+  - Knob 5: **Modulation** — Plate: combined mod speed+depth. CloudSeed: LineModAmount
+  - Knob 6: **Diffusion** — Plate: tank diffusion. CloudSeed: LateDiffusionFeedback
+- Toggle switches are ignored in edit mode
 - Footswitch 1: Cancel (restore previous)
 - Footswitch 2: Save to flash
 
@@ -236,16 +235,19 @@ Simple digital delay with:
 Settings stored in QSPI flash via `PersistentStorage<Settings>`:
 
 ```cpp
+struct ReverbEditParams {
+  float pre_delay;          // Pre-delay amount
+  float decay;              // Reverb decay / tail length
+  float tone;               // Brightness (high-cut filter)
+  float modulation;         // Movement / shimmer
+  float diffusion;          // Density / smearing
+};
+
 struct Settings {
   int version;              // SETTINGS_VERSION for migration
-  float decay;              // Reverb decay
-  float diffusion;          // Tank diffusion
-  float input_cutoff_freq;  // Input high-cut
-  float tank_cutoff_freq;   // Tank high-cut
-  int tank_mod_speed_pos;   // LFO speed switch position
-  int tank_mod_depth_pos;   // LFO depth switch position
-  int tank_mod_shape_pos;   // LFO shape switch position
-  float pre_delay;          // Pre-delay amount
+  ReverbEditParams ambient_params;   // CloudSeed ambient edit params
+  ReverbEditParams plate_params;     // Dattorro plate edit params
+  ReverbEditParams room_params;      // CloudSeed room edit params
   int mono_stereo_mode;     // I/O routing mode
   int polarity_mode;        // Phase inversion mode
   int reverb_knob_mode;     // Reverb wet/dry knob behavior
@@ -279,7 +281,8 @@ make PLATFORM=hothouse
 
 **Sources:**
 - Core: `flick.cpp`, `daisy_hardware.cpp`, `flick_oscillator.cpp`
-- Reverbs: `hall_reverb.cpp`, `spring_reverb.cpp`
+- Reverbs: `cloud_reverb.cpp`, `plate_reverb.cpp`
+- CloudSeed: CloudSeed algorithm files (`FastSin.cpp`, `AudioLib/Biquad.cpp`, `AudioLib/ShaRandom.cpp`, `AudioLib/ValueTables.cpp`, `Utils/Sha256.cpp`)
 - PlateauNEVersio: Dattorro implementation and dependencies
 
 **Dependencies:**
@@ -296,7 +299,9 @@ make PLATFORM=hothouse
 
 **SDRAM Usage:**
 - Delay lines (2 seconds × 2 channels @ 48kHz)
-- Plate reverb buffers (50 InterpDelay buffers)
+- Plate reverb buffers (50 InterpDelay buffers, ~28.8 MB)
+- CloudSeed shared pool (8 MB — two CloudReverb instances allocate sequentially)
+- CloudSeed ValueTables (3 lookup tables, ~48 KB) and FastSin (128 KB)
 
 **Flash Usage:**
 - Persistent settings in QSPI
@@ -315,12 +320,12 @@ make PLATFORM=hothouse
 | Knob 1  | Reverb amount | Reverb amount | Reverb amount | - |
 | Knob 2  | Trem speed | Trem speed | Pre-delay | - |
 | Knob 3  | Trem depth | Trem depth | Decay | - |
-| Knob 4  | Delay time | Delay time (frozen) | Diffusion | - |
-| Knob 5  | Delay feedback | Delay feedback | Input cut | - |
-| Knob 6  | Delay amount | Delay amount | Tank cut | - |
-| Switch 1 | Reverb type | Reverb type | Mod speed | Reverb wet/dry |
-| Switch 2 | Trem type | Trem type | Mod depth | Polarity |
-| Switch 3 | Delay timing | Delay timing | Mod shape | Mono/Stereo |
+| Knob 4  | Delay time | Delay time (frozen) | Tone | - |
+| Knob 5  | Delay feedback | Delay feedback | Modulation | - |
+| Knob 6  | Delay amount | Delay amount | Diffusion | - |
+| Switch 1 | Reverb type | Reverb type | *(ignored)* | Reverb wet/dry |
+| Switch 2 | Trem type | Trem type | *(ignored)* | Polarity |
+| Switch 3 | Delay timing | Delay timing | *(ignored)* | Mono/Stereo |
 | FSW 1 Single | Reverb on/off | Exit tap tempo | Cancel | Cancel |
 | FSW 1 Double | Enter tap tempo | - | - | - |
 | FSW 1 Long | Enter reverb edit | - | - | - |
@@ -377,11 +382,24 @@ src/
 │
 ├── reverb_effect.h              # Reverb base class (polymorphic interface)
 ├── plate_reverb.h/cpp           # Plate reverb (Dattorro algorithm)
-├── hall_reverb.h/cpp            # Hall reverb (Schroeder algorithm)
-├── spring_reverb.h/cpp          # Spring reverb (digital waveguide)
+├── cloud_reverb.h/cpp           # CloudSeed reverb adapter (ambient + room)
 │
 ├── flick_oscillator.h/cpp       # LFO/oscillator (used by tremolo effects)
 ├── flick_filters.hpp            # DSP filter implementations
+│
+├── CloudSeed/                   # CloudSeed algorithm (MIT license, adapted for Flick)
+│   ├── ReverbController.h       # Stereo controller, presets, parameter scaling
+│   ├── ReverbChannel.h          # Per-channel processing (1 delay line per channel)
+│   ├── AllpassDiffuser.h        # Cascaded allpass chain (2 stages max)
+│   ├── MultitapDiffuser.h       # Early reflections (up to 50 taps)
+│   ├── ModulatedAllpass.h       # Individual modulated allpass filter
+│   ├── ModulatedDelay.h         # Delay with sinusoidal LFO modulation
+│   ├── DelayLine.h              # Late reverb line (delay + diffuser + filters)
+│   ├── FastSin.h/cpp            # Fast sine lookup table (SDRAM)
+│   ├── Parameter.h              # Parameter enum
+│   ├── Utils.h                  # Buffer utilities
+│   ├── AudioLib/                # Biquad filters, ShaRandom, ValueTables, Lp1/Hp1
+│   └── Utils/                   # SHA-256 implementation (for seed randomization)
 │
 └── PlateauNEVersio/             # Third-party Dattorro implementation
     ├── Dattorro.hpp/cpp         # Plate reverb core (wrapped by PlateReverb)
@@ -407,16 +425,17 @@ class SineTremolo : public TremoloEffect { /* smooth */ };
 class SquareTremolo : public TremoloEffect { /* choppy */ };
 class HarmonicTremolo : public TremoloEffect { /* band-split */ };
 
-// Reverb: Base class with 3 derived algorithms
+// Reverb: Base class with 2 derived algorithms
 class ReverbEffect {
   virtual void ProcessSample(...) = 0;
-  virtual void SetDecay(float decay) {}  // Optional (no-op default)
-  virtual void SetDiffusion(float d) {}  // Optional (plate-specific)
-  // ... more optional algorithm-specific parameters
+  virtual void SetDecay(float decay) {}      // Unified edit: Decay
+  virtual void SetDiffusion(float d) {}      // Unified edit: Diffusion
+  virtual void SetPreDelay(float p) {}       // Unified edit: Pre-delay
+  virtual void SetTone(float tone) {}        // Unified edit: Tone (brightness)
+  virtual void SetModulation(float mod) {}   // Unified edit: Modulation (shimmer)
 };
 class PlateReverb : public ReverbEffect { /* Dattorro */ };
-class HallReverb : public ReverbEffect { /* Schroeder */ };
-class SpringReverb : public ReverbEffect { /* waveguide */ };
+class CloudReverb : public ReverbEffect { /* CloudSeed — 2 instances: ambient + room */ };
 
 // Delay: Single class (no polymorphism needed)
 class DelayEffect {
@@ -441,9 +460,7 @@ SAMPLE_RATE = 48000.0f
 MAX_DELAY = 96000 samples (2 seconds)
 TREMOLO_SPEED_MIN = 0.2 Hz
 TREMOLO_SPEED_MAX = 16.0 Hz
-PLATE_TANK_MOD_SPEED_SCALE = 8.0f   // Dattorro reverb speed scaling
-PLATE_TANK_MOD_DEPTH_SCALE = 15.0f  // Dattorro reverb depth scaling
-SETTINGS_VERSION = 8  // Increment on Settings struct change
+SETTINGS_VERSION = 9  // Increment on Settings struct change
 ```
 
 ## Development Notes

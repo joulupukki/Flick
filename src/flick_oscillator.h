@@ -116,6 +116,6 @@ class FlickOscillator {
   float sr_, sr_recip_, phase_, phase_inc_;
   bool eor_, eoc_;
 };
-}  // namespace clevelandmusicco
+}  // namespace flick
 #endif
 #endif

@@ -24,7 +24,7 @@ namespace flick {
 /**
  * Base class for reverb effects.
  *
- * Provides common interface for all reverb algorithms (plate, hall, spring).
+ * Provides common interface for all reverb algorithms (plate, CloudSeed ambient, CloudSeed room).
  * Uses virtual functions to allow runtime algorithm switching via base class pointers.
  *
  * Design pattern: Virtual methods with no-op defaults for algorithm-specific parameters.
@@ -57,13 +57,6 @@ public:
    */
   virtual void Clear() = 0;
 
-  /**
-   * Set reverb mix amount (common to all reverbs).
-   *
-   * @param mix Mix amount 0-1
-   */
-  virtual void SetMix(float mix) { mix_ = mix; }
-
   // Algorithm-specific parameters (no-op by default, override if needed)
 
   /**
@@ -74,56 +67,40 @@ public:
   virtual void SetDecay(float decay) {}
 
   /**
-   * Set diffusion amount (plate reverb only).
+   * Set diffusion amount.
    *
    * @param diffusion Diffusion 0-1
    */
   virtual void SetDiffusion(float diffusion) {}
 
   /**
-   * Set pre-delay time (plate/spring reverbs).
+   * Set pre-delay time.
    *
    * @param pre_delay Pre-delay in seconds
    */
   virtual void SetPreDelay(float pre_delay) {}
 
   /**
-   * Set input high-cut filter frequency (plate reverb only).
+   * Set tone/brightness of reverb tail.
    *
-   * @param freq Cutoff frequency in Hz
+   * Plate: tank high-cut filter frequency.
+   * CloudSeed: post-processing cutoff frequency.
+   *
+   * @param tone Tone amount 0-1 (0=dark, 1=bright)
    */
-  virtual void SetInputHighCut(float freq) {}
+  virtual void SetTone(float tone) {}
 
   /**
-   * Set tank high-cut filter frequency (plate reverb only).
+   * Set modulation depth (movement/shimmer).
    *
-   * @param freq Cutoff frequency in Hz
-   */
-  virtual void SetTankHighCut(float freq) {}
-
-  /**
-   * Set tank modulation speed (plate reverb only).
+   * Plate: combined mod speed + depth.
+   * CloudSeed: late reverb line modulation amount.
    *
-   * @param speed Modulation speed (scaled value)
+   * @param mod Modulation amount 0-1
    */
-  virtual void SetTankModSpeed(float speed) {}
-
-  /**
-   * Set tank modulation depth (plate reverb only).
-   *
-   * @param depth Modulation depth (scaled value)
-   */
-  virtual void SetTankModDepth(float depth) {}
-
-  /**
-   * Set tank modulation shape (plate reverb only).
-   *
-   * @param shape Modulation shape parameter
-   */
-  virtual void SetTankModShape(float shape) {}
+  virtual void SetModulation(float mod) {}
 
 protected:
-  float mix_ = 1.0f;
   float sample_rate_ = 48000.0f;
 };
 

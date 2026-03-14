@@ -47,46 +47,19 @@ public:
   void ProcessSample(float in_L, float in_R, float* out_L, float* out_R) override;
   void Clear() override;
 
-  // Override plate-specific parameters
+  // Override reverb parameters (unified edit mode interface)
   void SetDecay(float decay) override;
   void SetDiffusion(float diffusion) override;
   void SetPreDelay(float pre_delay) override;
-  void SetInputHighCut(float freq) override;
-  void SetTankHighCut(float freq) override;
-  void SetTankModSpeed(float speed) override;
-  void SetTankModDepth(float depth) override;
-  void SetTankModShape(float shape) override;
-
-  /**
-   * Parameter structure for persistence (saved to Settings).
-   */
-  struct Params {
-    float decay;
-    float diffusion;
-    float pre_delay;
-    float input_cutoff_freq;
-    float tank_cutoff_freq;
-    int tank_mod_speed_pos;
-    int tank_mod_depth_pos;
-    int tank_mod_shape_pos;
-  };
-
-  /**
-   * Get current parameters for saving to Settings.
-   */
-  Params GetParams() const;
-
-  /**
-   * Set parameters from Settings.
-   */
-  void SetParams(const Params& params);
+  void SetTone(float tone) override;
+  void SetModulation(float mod) override;
 
 private:
   Dattorro verb_;
-  Params params_;
 
   /**
-   * Apply current parameters to Dattorro instance.
+   * Apply default editable parameters to Dattorro instance.
+   * Called during Init(); loadSettings() will override with saved values.
    */
   void updateDattorroParameters();
 };
