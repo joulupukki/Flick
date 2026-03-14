@@ -122,6 +122,26 @@ public:
    */
   virtual void SetTankModShape(float shape) {}
 
+  /**
+   * Set tone/brightness of reverb tail.
+   *
+   * Plate: tank high-cut filter frequency.
+   * CloudSeed: post-processing cutoff frequency.
+   *
+   * @param tone Tone amount 0-1 (0=dark, 1=bright)
+   */
+  virtual void SetTone(float tone) {}
+
+  /**
+   * Set modulation depth (movement/shimmer).
+   *
+   * Plate: combined mod speed + depth.
+   * CloudSeed: late reverb line modulation amount.
+   *
+   * @param mod Modulation amount 0-1
+   */
+  virtual void SetModulation(float mod) {}
+
 protected:
   float mix_ = 1.0f;
   float sample_rate_ = 48000.0f;

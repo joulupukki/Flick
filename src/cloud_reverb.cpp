@@ -93,8 +93,8 @@ void CloudReverb::ProcessSample(float in_L, float in_R,
     }
 
     // Read this sample's output (all from the same processing pass)
-    *out_L = out_buf_L_[buf_pos_];
-    *out_R = out_buf_R_[buf_pos_];
+    *out_L = out_buf_L_[buf_pos_] * output_gain_;
+    *out_R = out_buf_R_[buf_pos_] * output_gain_;
 
     // Buffer the current input for processing at the start of the NEXT block
     in_buf_L_[buf_pos_] = in_L;
@@ -109,22 +109,71 @@ void CloudReverb::Clear() {
     }
 }
 
+// ============================================================================
+// Parameter setters — defer to main loop
+// ============================================================================
+// CloudSeed's SetParameter triggers expensive operations inside the reverb
+// engine (SHA-256 hashing in UpdateLines, biquad coefficient recalculation).
+// These MUST NOT run inside the audio ISR — they cause underruns and crashes.
+//
+// The setters below store pending values. The main loop calls
+// ApplyPendingParams() to do the actual (expensive) SetParameter work
+// outside the audio ISR.
+
 void CloudReverb::SetDecay(float decay) {
-    if (controller_) {
-        controller_->SetParameter(Parameter::LineDecay, decay);
-    }
+    pending_.decay = decay;
+    pending_.has_pending = true;
 }
 
 void CloudReverb::SetDiffusion(float diffusion) {
-    if (controller_) {
-        controller_->SetParameter(Parameter::LateDiffusionFeedback, diffusion);
-    }
+    pending_.diffusion = diffusion;
+    pending_.has_pending = true;
 }
 
 void CloudReverb::SetPreDelay(float pre_delay) {
-    if (controller_) {
-        controller_->SetParameter(Parameter::PreDelay, pre_delay);
+    // CloudSeed scales PreDelay as value * 1000ms, giving 0-1000ms range.
+    // Scale down to 0-100ms — appropriate for guitar reverb pre-delay.
+    pending_.pre_delay = pre_delay * 0.1f;
+    pending_.has_pending = true;
+}
+
+void CloudReverb::SetTone(float tone) {
+    pending_.tone = tone;
+    pending_.has_pending = true;
+}
+
+void CloudReverb::SetModulation(float mod) {
+    pending_.modulation = mod;
+    pending_.has_pending = true;
+}
+
+void CloudReverb::ApplyPendingParams() {
+    if (!pending_.has_pending || !controller_)
+        return;
+
+    if (pending_.pre_delay >= 0.0f) {
+        controller_->SetParameter(Parameter::PreDelay, pending_.pre_delay);
+        pending_.pre_delay = -1.0f;
     }
+    if (pending_.decay >= 0.0f) {
+        controller_->SetParameter(Parameter::LineDecay, pending_.decay);
+        pending_.decay = -1.0f;
+    }
+    if (pending_.tone >= 0.0f) {
+        controller_->SetParameter(Parameter::CutoffEnabled, 1.0f);
+        controller_->SetParameter(Parameter::PostCutoffFrequency, pending_.tone);
+        pending_.tone = -1.0f;
+    }
+    if (pending_.modulation >= 0.0f) {
+        controller_->SetParameter(Parameter::LineModAmount, pending_.modulation);
+        pending_.modulation = -1.0f;
+    }
+    if (pending_.diffusion >= 0.0f) {
+        controller_->SetParameter(Parameter::LateDiffusionFeedback, pending_.diffusion);
+        pending_.diffusion = -1.0f;
+    }
+
+    pending_.has_pending = false;
 }
 
 void CloudReverb::SetPreset(int preset_index) {

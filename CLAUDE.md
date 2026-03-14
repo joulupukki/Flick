@@ -186,17 +186,16 @@ Simple digital delay with:
 **Reverb Edit Mode** (`PEDAL_MODE_EDIT_REVERB`)
 - Activated by long-press of Footswitch 1
 - Both LEDs flash together
+- Edits the **currently selected** reverb type (locked on entry — toggle switch 1 changes are ignored)
+- Each reverb type has its own saved parameter set
 - Uses parameter capture (soft takeover) to prevent sudden jumps
-- Knobs control reverb parameters:
-  - Knob 2: Pre-delay (scaled 0.25x)
-  - Knob 3: Decay
-  - Knob 4: Tank diffusion
-  - Knob 5: Input high-cut frequency (scaled 10x)
-  - Knob 6: Tank high-cut frequency (scaled 10x)
-- Toggle switches control modulation (speed/depth/shape):
-  - Switch 1: Tank Mod Speed (0.5, 0.25, 0.1 → scaled by `PLATE_TANK_MOD_SPEED_SCALE` when applied)
-  - Switch 2: Tank Mod Depth (0.5, 0.25, 0.1 → scaled by `PLATE_TANK_MOD_DEPTH_SCALE` when applied)
-  - Switch 3: Tank Mod Shape (0.5, 0.25, 0.1)
+- Unified knob mapping (5 knobs, no toggle switches):
+  - Knob 2: **Pre-delay** — Plate: pre-delay. CloudSeed: PreDelay
+  - Knob 3: **Decay** — Plate: decay. CloudSeed: LineDecay
+  - Knob 4: **Tone** — Plate: tank high-cut filter. CloudSeed: PostCutoffFrequency
+  - Knob 5: **Modulation** — Plate: combined mod speed+depth. CloudSeed: LineModAmount
+  - Knob 6: **Diffusion** — Plate: tank diffusion. CloudSeed: LateDiffusionFeedback
+- Toggle switches are ignored in edit mode
 - Footswitch 1: Cancel (restore previous)
 - Footswitch 2: Save to flash
 
@@ -236,16 +235,19 @@ Simple digital delay with:
 Settings stored in QSPI flash via `PersistentStorage<Settings>`:
 
 ```cpp
+struct ReverbEditParams {
+  float pre_delay;          // Pre-delay amount
+  float decay;              // Reverb decay / tail length
+  float tone;               // Brightness (high-cut filter)
+  float modulation;         // Movement / shimmer
+  float diffusion;          // Density / smearing
+};
+
 struct Settings {
   int version;              // SETTINGS_VERSION for migration
-  float decay;              // Reverb decay
-  float diffusion;          // Tank diffusion
-  float input_cutoff_freq;  // Input high-cut
-  float tank_cutoff_freq;   // Tank high-cut
-  int tank_mod_speed_pos;   // LFO speed switch position
-  int tank_mod_depth_pos;   // LFO depth switch position
-  int tank_mod_shape_pos;   // LFO shape switch position
-  float pre_delay;          // Pre-delay amount
+  ReverbEditParams ambient_params;   // CloudSeed ambient edit params
+  ReverbEditParams plate_params;     // Dattorro plate edit params
+  ReverbEditParams room_params;      // CloudSeed room edit params
   int mono_stereo_mode;     // I/O routing mode
   int polarity_mode;        // Phase inversion mode
   int reverb_knob_mode;     // Reverb wet/dry knob behavior
@@ -318,12 +320,12 @@ make PLATFORM=hothouse
 | Knob 1  | Reverb amount | Reverb amount | Reverb amount | - |
 | Knob 2  | Trem speed | Trem speed | Pre-delay | - |
 | Knob 3  | Trem depth | Trem depth | Decay | - |
-| Knob 4  | Delay time | Delay time (frozen) | Diffusion | - |
-| Knob 5  | Delay feedback | Delay feedback | Input cut | - |
-| Knob 6  | Delay amount | Delay amount | Tank cut | - |
-| Switch 1 | Reverb type | Reverb type | Mod speed | Reverb wet/dry |
-| Switch 2 | Trem type | Trem type | Mod depth | Polarity |
-| Switch 3 | Delay timing | Delay timing | Mod shape | Mono/Stereo |
+| Knob 4  | Delay time | Delay time (frozen) | Tone | - |
+| Knob 5  | Delay feedback | Delay feedback | Modulation | - |
+| Knob 6  | Delay amount | Delay amount | Diffusion | - |
+| Switch 1 | Reverb type | Reverb type | *(ignored)* | Reverb wet/dry |
+| Switch 2 | Trem type | Trem type | *(ignored)* | Polarity |
+| Switch 3 | Delay timing | Delay timing | *(ignored)* | Mono/Stereo |
 | FSW 1 Single | Reverb on/off | Exit tap tempo | Cancel | Cancel |
 | FSW 1 Double | Enter tap tempo | - | - | - |
 | FSW 1 Long | Enter reverb edit | - | - | - |
@@ -426,9 +428,11 @@ class HarmonicTremolo : public TremoloEffect { /* band-split */ };
 // Reverb: Base class with 2 derived algorithms
 class ReverbEffect {
   virtual void ProcessSample(...) = 0;
-  virtual void SetDecay(float decay) {}  // Optional (no-op default)
-  virtual void SetDiffusion(float d) {}  // Optional (plate-specific)
-  // ... more optional algorithm-specific parameters
+  virtual void SetDecay(float decay) {}      // Unified edit: Decay
+  virtual void SetDiffusion(float d) {}      // Unified edit: Diffusion
+  virtual void SetPreDelay(float p) {}       // Unified edit: Pre-delay
+  virtual void SetTone(float tone) {}        // Unified edit: Tone (brightness)
+  virtual void SetModulation(float mod) {}   // Unified edit: Modulation (shimmer)
 };
 class PlateReverb : public ReverbEffect { /* Dattorro */ };
 class CloudReverb : public ReverbEffect { /* CloudSeed — 2 instances: ambient + room */ };
@@ -456,9 +460,7 @@ SAMPLE_RATE = 48000.0f
 MAX_DELAY = 96000 samples (2 seconds)
 TREMOLO_SPEED_MIN = 0.2 Hz
 TREMOLO_SPEED_MAX = 16.0 Hz
-PLATE_TANK_MOD_SPEED_SCALE = 8.0f   // Dattorro reverb speed scaling
-PLATE_TANK_MOD_DEPTH_SCALE = 15.0f  // Dattorro reverb depth scaling
-SETTINGS_VERSION = 8  // Increment on Settings struct change
+SETTINGS_VERSION = 9  // Increment on Settings struct change
 ```
 
 ## Development Notes

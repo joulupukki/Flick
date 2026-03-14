@@ -96,7 +96,7 @@ using daisysp::fonepole;
 
 /// Increment this when changing the settings struct so the software will know
 /// to reset to defaults if this ever changes.
-#define SETTINGS_VERSION 8
+#define SETTINGS_VERSION 9
 
 // Audio configuration
 constexpr float SAMPLE_RATE = 48000.0f;
@@ -106,16 +106,7 @@ constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 constexpr float NOTCH_1_FREQ = 6020.0f;   // Daisy Seed resonance notch
 constexpr float NOTCH_2_FREQ = 12278.0f;  // Daisy Seed resonance notch
 
-// Reverb constants (Dattorro plate reverb scaling)
-constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
-constexpr float PLATE_DAMP_SCALE = 10.0f;
-
-constexpr float PLATE_TANK_MOD_SPEED_VALUES[] = {0.5f, 0.25f, 0.1f};
-constexpr float PLATE_TANK_MOD_DEPTH_VALUES[] = {0.5f, 0.25f, 0.1f};
-constexpr float PLATE_TANK_MOD_SHAPE_VALUES[] = {0.5f, 0.25f, 0.1f};
-
-constexpr float PLATE_TANK_MOD_SPEED_SCALE = 8.0f;  // Multiplier for tank modulation speed
-constexpr float PLATE_TANK_MOD_DEPTH_SCALE = 15.0f; // Multiplier for tank modulation depth
+// Reverb constants (plate scaling now internal to PlateReverb)
 
 // Tremolo constants
 constexpr float TREMOLO_SPEED_MIN = 0.2f;              // Minimum tremolo speed in Hz
@@ -262,17 +253,33 @@ constexpr PolarityMode kPolarityMap[] = {
 // STRUCTS
 // ============================================================================
 
+// Per-reverb editable parameters (5 unified knobs in edit mode)
+struct ReverbEditParams {
+  float pre_delay;
+  float decay;
+  float tone;
+  float modulation;
+  float diffusion;
+
+  bool operator==(const ReverbEditParams& a) const {
+    return a.pre_delay == pre_delay && a.decay == decay &&
+           a.tone == tone && a.modulation == modulation &&
+           a.diffusion == diffusion;
+  }
+  bool operator!=(const ReverbEditParams& a) const {
+    return !(*this == a);
+  }
+};
+
 // Persistent settings stored in QSPI flash
 struct Settings {
   int version; // Version of the settings struct
-  float decay;
-  float diffusion;
-  float input_cutoff_freq;
-  float tank_cutoff_freq;
-  int tank_mod_speed_pos;    // Switch position (0, 1, or 2)
-  int tank_mod_depth_pos;    // Switch position (0, 1, or 2)
-  int tank_mod_shape_pos;    // Switch position (0, 1, or 2)
-  float pre_delay;
+
+  // Per-reverb edit parameters (one set per reverb type)
+  ReverbEditParams ambient_params;  // CloudSeed ambient (toggle UP)
+  ReverbEditParams plate_params;    // Dattorro plate (toggle MIDDLE)
+  ReverbEditParams room_params;     // CloudSeed room (toggle DOWN)
+
   int mono_stereo_mode;
   int polarity_mode;
   int reverb_knob_mode;
@@ -286,14 +293,9 @@ struct Settings {
   bool operator!=(const Settings& a) const {
     return !(
       a.version == version &&
-      a.decay == decay &&
-      a.diffusion == diffusion &&
-      a.input_cutoff_freq == input_cutoff_freq &&
-      a.tank_cutoff_freq == tank_cutoff_freq &&
-      a.tank_mod_speed_pos == tank_mod_speed_pos &&
-      a.tank_mod_depth_pos == tank_mod_depth_pos &&
-      a.tank_mod_shape_pos == tank_mod_shape_pos &&
-      a.pre_delay == pre_delay &&
+      a.ambient_params == ambient_params &&
+      a.plate_params == plate_params &&
+      a.room_params == room_params &&
       a.mono_stereo_mode == mono_stereo_mode &&
       a.polarity_mode == polarity_mode &&
       a.reverb_knob_mode == reverb_knob_mode &&
@@ -317,12 +319,15 @@ struct BypassState {
 // ============================================================================
 // The reverb effects (PlateReverb, CloudReverb) are DSP-only
 // modules with no knowledge of hardware. This orchestrator structure manages
-// UI state, mixing, current algorithm selection, and plate reverb parameter
-// values that are passed to the effects.
+// UI state, mixing, current algorithm selection, and per-reverb parameter
+// values that are passed to the effects via the unified edit mode interface.
 
 struct ReverbOrchestrator {
-  // Current algorithm selection
+  // Current algorithm selection (from toggle switch 1 in normal mode)
   ReverbType current_type = REVERB_PLATE;
+
+  // Locked reverb type during edit mode (prevents switching mid-edit)
+  ReverbType edit_type = REVERB_PLATE;
 
   // Reverb knob mode (device setting - affects dry/wet mixing behavior)
   ReverbKnobMode knob_mode = REVERB_KNOB_DRY_WET_MIX;
@@ -331,18 +336,19 @@ struct ReverbOrchestrator {
   float dry = 1.0f;
   float wet = 0.5f;
 
-  // Plate reverb parameters (editable in reverb edit mode, saved to flash)
-  // These are UI-level values that get passed to PlateReverb via setters
-  float plate_pre_delay = 0.0f;           // Pre-delay (scaled before passing to effect)
-  float plate_decay = 0.8f;               // Decay amount
-  float plate_diffusion = 0.85f;          // Tank diffusion
-  float plate_input_damp_high = 7.25f / PLATE_DAMP_SCALE;  // Input high-cut (~3000Hz)
-  float plate_tank_damp_high = 7.25f / PLATE_DAMP_SCALE;   // Tank high-cut (~3520Hz)
+  // Per-reverb editable parameters (saved to flash, edited in reverb edit mode)
+  ReverbEditParams ambient = {0.0f, 0.83f, 0.8f, 0.055f, 0.715f};
+  ReverbEditParams plate   = {0.0f, 0.8f, 0.725f, 0.0f, 0.85f};
+  ReverbEditParams room    = {0.0f, 0.4f, 0.8f, 0.19f, 0.595f};
 
-  // Tank modulation switch positions (0, 1, or 2) - mapped to values when applied
-  int plate_mod_speed_pos = 2;  // Position 2 = 0.1 (from PLATE_TANK_MOD_SPEED_VALUES)
-  int plate_mod_depth_pos = 2;  // Position 2 = 0.1 (from PLATE_TANK_MOD_DEPTH_VALUES)
-  int plate_mod_shape_pos = 1;  // Position 1 = 0.25 (from PLATE_TANK_MOD_SHAPE_VALUES)
+  // Get params for a given reverb type
+  ReverbEditParams& paramsForType(ReverbType type) {
+    switch (type) {
+      case REVERB_CLOUD: return ambient;
+      case REVERB_ROOM:  return room;
+      default:           return plate;
+    }
+  }
 };
 
 // ============================================================================
@@ -366,8 +372,8 @@ DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS delMemR;
 // current_reverb points to whichever reverb is active (plate/hall/spring)
 ReverbEffect* current_reverb = nullptr;
 PlateReverb plate_reverb;    // Dattorro algorithm (lush, complex)
-CloudReverb cloud_reverb;    // CloudSeed ambient (Rubi-Ka Fields)
-CloudReverb cloud_reverb_room; // CloudSeed room (Small Room)
+CloudReverb ambient_reverb;    // CloudSeed ambient (Rubi-Ka Fields)
+CloudReverb room_reverb; // CloudSeed room (Small Room)
 
 // Tremolo effects (polymorphic - switch at runtime)
 TremoloEffect* current_tremolo = nullptr;
@@ -533,18 +539,23 @@ inline void updateReverbScales(MonoStereoMode mode) {
 }
 
 /**
- * @brief Updates plate reverb parameters (now encapsulated in PlateReverb class).
- * This function is kept for compatibility but delegates to PlateReverb setters.
+ * @brief Apply unified edit parameters to the appropriate reverb effect.
+ * Called during edit mode processing, on settings load, and on settings restore.
  */
-void updatePlateReverbParameters() {
-  plate_reverb.SetDecay(reverb.plate_decay);
-  plate_reverb.SetDiffusion(reverb.plate_diffusion);
-  plate_reverb.SetInputHighCut(reverb.plate_input_damp_high);
-  plate_reverb.SetTankHighCut(reverb.plate_tank_damp_high);
-  plate_reverb.SetTankModSpeed(PLATE_TANK_MOD_SPEED_VALUES[reverb.plate_mod_speed_pos]);
-  plate_reverb.SetTankModDepth(PLATE_TANK_MOD_DEPTH_VALUES[reverb.plate_mod_depth_pos]);
-  plate_reverb.SetTankModShape(PLATE_TANK_MOD_SHAPE_VALUES[reverb.plate_mod_shape_pos]);
-  plate_reverb.SetPreDelay(reverb.plate_pre_delay);
+void applyReverbEditParams(ReverbType type, const ReverbEditParams& params) {
+  ReverbEffect* target = nullptr;
+  switch (type) {
+    case REVERB_CLOUD: target = &ambient_reverb; break;
+    case REVERB_PLATE: target = &plate_reverb; break;
+    case REVERB_ROOM:  target = &room_reverb; break;
+  }
+  if (target) {
+    target->SetPreDelay(params.pre_delay);
+    target->SetDecay(params.decay);
+    target->SetTone(params.tone);
+    target->SetModulation(params.modulation);
+    target->SetDiffusion(params.diffusion);
+  }
 }
 
 // ============================================================================
@@ -564,14 +575,11 @@ void loadSettings() {
     return;
   }
 
-  reverb.plate_decay = local_settings.decay;
-  reverb.plate_diffusion = local_settings.diffusion;
-  reverb.plate_input_damp_high = local_settings.input_cutoff_freq;
-  reverb.plate_tank_damp_high = local_settings.tank_cutoff_freq;
-  reverb.plate_mod_speed_pos = local_settings.tank_mod_speed_pos;
-  reverb.plate_mod_depth_pos = local_settings.tank_mod_depth_pos;
-  reverb.plate_mod_shape_pos = local_settings.tank_mod_shape_pos;
-  reverb.plate_pre_delay = local_settings.pre_delay;
+  // Load per-reverb edit parameters
+  reverb.ambient = local_settings.ambient_params;
+  reverb.plate = local_settings.plate_params;
+  reverb.room = local_settings.room_params;
+
   mono_stereo_mode = static_cast<MonoStereoMode>(local_settings.mono_stereo_mode);
   polarity_mode = static_cast<PolarityMode>(local_settings.polarity_mode);
   reverb.knob_mode = static_cast<ReverbKnobMode>(local_settings.reverb_knob_mode);
@@ -582,22 +590,19 @@ void loadSettings() {
   bypass.delay = local_settings.bypass_delay;
   tap_tempo.tapped_delay_samples = local_settings.tapped_delay_samples;
 
-  updatePlateReverbParameters();
+  // Apply loaded parameters to all three reverb effects
+  applyReverbEditParams(REVERB_CLOUD, reverb.ambient);
+  applyReverbEditParams(REVERB_PLATE, reverb.plate);
+  applyReverbEditParams(REVERB_ROOM, reverb.room);
 }
 
-void saveSettings() {
-  // Reference to local copy of settings stored in flash
+void saveReverbSettings() {
   Settings &local_settings = SavedSettings.GetSettings();
 
   local_settings.version = SETTINGS_VERSION;
-  local_settings.decay = reverb.plate_decay;
-  local_settings.diffusion = reverb.plate_diffusion;
-  local_settings.input_cutoff_freq = reverb.plate_input_damp_high;
-  local_settings.tank_cutoff_freq = reverb.plate_tank_damp_high;
-  local_settings.tank_mod_speed_pos = reverb.plate_mod_speed_pos;
-  local_settings.tank_mod_depth_pos = reverb.plate_mod_depth_pos;
-  local_settings.tank_mod_shape_pos = reverb.plate_mod_shape_pos;
-  local_settings.pre_delay = reverb.plate_pre_delay;
+  local_settings.ambient_params = reverb.ambient;
+  local_settings.plate_params = reverb.plate;
+  local_settings.room_params = reverb.room;
 
   trigger_settings_save = true;
 }
@@ -623,20 +628,16 @@ void saveBypassStates() {
   trigger_settings_save = true;
 }
 
-/// @brief Restore the reverb settings from the saved settings.
+/// @brief Restore reverb settings from flash and re-apply to the edited reverb.
 void restoreReverbSettings() {
   Settings &local_settings = SavedSettings.GetSettings();
 
-  reverb.plate_decay = local_settings.decay;
-  reverb.plate_diffusion = local_settings.diffusion;
-  reverb.plate_input_damp_high = local_settings.input_cutoff_freq;
-  reverb.plate_tank_damp_high = local_settings.tank_cutoff_freq;
-  reverb.plate_mod_speed_pos = local_settings.tank_mod_speed_pos;
-  reverb.plate_mod_depth_pos = local_settings.tank_mod_depth_pos;
-  reverb.plate_mod_shape_pos = local_settings.tank_mod_shape_pos;
-  reverb.plate_pre_delay = local_settings.pre_delay;
+  reverb.ambient = local_settings.ambient_params;
+  reverb.plate = local_settings.plate_params;
+  reverb.room = local_settings.room_params;
 
-  updatePlateReverbParameters();
+  // Re-apply to the effect that was being edited
+  applyReverbEditParams(reverb.edit_type, reverb.paramsForType(reverb.edit_type));
 }
 
 /// @brief Restore the device settings from the saved settings.
@@ -763,20 +764,17 @@ void handleNormalPress(Funbox::Switches footswitch) {
     // Only save the settings if the RIGHT footswitch is pressed in edit mode.
     // The LEFT footswitch is used to exit edit mode without saving.
     if (footswitch == Funbox::FOOTSWITCH_2) {
-      saveSettings();
+      saveReverbSettings();
     } else {
       restoreReverbSettings();
     }
 
-    // Reset all parameter captures when exiting reverb edit mode
+    // Reset knob captures when exiting reverb edit mode
     p_knob_2_capture.Reset();
     p_knob_3_capture.Reset();
     p_knob_4_capture.Reset();
     p_knob_5_capture.Reset();
     p_knob_6_capture.Reset();
-    p_sw1_capture.Reset();
-    p_sw2_capture.Reset();
-    p_sw3_capture.Reset();
 
     pedal_mode = PEDAL_MODE_NORMAL;
   } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
@@ -869,7 +867,15 @@ void handleLongPress(Funbox::Switches footswitch) {
 
   // When long press is detected, a normal press was already detected and
   // processed, so reverse that right off the bat.
-  handleNormalPress(footswitch);
+  // We reverse the toggle directly instead of calling handleNormalPress()
+  // to avoid triggering a QSPI flash save. QSPI writes stall the AHB3 bus
+  // (shared with SDRAM), which can cause audio underruns when CloudSeed is
+  // actively processing its SDRAM-resident delay buffers.
+  if (footswitch == Funbox::FOOTSWITCH_1) {
+    bypass.reverb = !bypass.reverb;
+  } else {
+    bypass.tremolo = !bypass.tremolo;
+  }
 
   // Check if both footswitches are pressed simultaneously - enter DFU mode
   bool both_pressed = hw.switches[Funbox::FOOTSWITCH_1].Pressed() &&
@@ -879,15 +885,15 @@ void handleLongPress(Funbox::Switches footswitch) {
     // Set flag to trigger DFU mode in main loop (where LED blinking works properly)
     trigger_dfu_mode = true;
   } else if (footswitch == Funbox::FOOTSWITCH_1) {
-    // FOOTSWITCH_1 long press: Enter reverb edit mode
-    p_knob_2_capture.Capture(reverb.plate_pre_delay);
-    p_knob_3_capture.Capture(reverb.plate_decay);
-    p_knob_4_capture.Capture(reverb.plate_diffusion);
-    p_knob_5_capture.Capture(reverb.plate_input_damp_high);
-    p_knob_6_capture.Capture(reverb.plate_tank_damp_high);
-    p_sw1_capture.Capture(reverb.plate_mod_speed_pos);
-    p_sw2_capture.Capture(reverb.plate_mod_depth_pos);
-    p_sw3_capture.Capture(reverb.plate_mod_shape_pos);
+    // FOOTSWITCH_1 long press: Enter reverb edit mode for the current reverb type
+    reverb.edit_type = reverb.current_type;
+    ReverbEditParams& params = reverb.paramsForType(reverb.edit_type);
+
+    p_knob_2_capture.Capture(params.pre_delay);
+    p_knob_3_capture.Capture(params.decay);
+    p_knob_4_capture.Capture(params.tone);
+    p_knob_5_capture.Capture(params.modulation);
+    p_knob_6_capture.Capture(params.diffusion);
 
     bypass.reverb = false; // Make sure that reverb is ON
     pedal_mode = PEDAL_MODE_EDIT_REVERB;
@@ -1078,20 +1084,29 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         break;
     }
   } else if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
-    // Edit mode with parameter capture
+    // Edit mode: 5 knobs control the locked reverb type's parameters
     reverb.dry = 1.0f; // Always use dry 100% in edit mode
 
-    // Use capture objects - pass calculated values, they return frozen or current based on movement
-    reverb.plate_pre_delay = p_knob_2_capture.Process();
-    reverb.plate_decay = p_knob_3_capture.Process();
-    reverb.plate_diffusion = p_knob_4_capture.Process();
-    reverb.plate_input_damp_high = p_knob_5_capture.Process();
-    reverb.plate_tank_damp_high = p_knob_6_capture.Process();
-    reverb.plate_mod_speed_pos = p_sw1_capture.Process();
-    reverb.plate_mod_depth_pos = p_sw2_capture.Process();
-    reverb.plate_mod_shape_pos = p_sw3_capture.Process();
+    ReverbEditParams& params = reverb.paramsForType(reverb.edit_type);
+    float v;
 
-    updatePlateReverbParameters();
+    // Apply only the specific parameter that changed — CloudSeed reacts
+    // poorly to multiple SetParameter calls at once (causes audio glitches
+    // from abrupt internal state changes, especially on delay-based params).
+    v = p_knob_2_capture.Process();
+    if (v != params.pre_delay) { params.pre_delay = v; current_reverb->SetPreDelay(v); }
+
+    v = p_knob_3_capture.Process();
+    if (v != params.decay) { params.decay = v; current_reverb->SetDecay(v); }
+
+    v = p_knob_4_capture.Process();
+    if (v != params.tone) { params.tone = v; current_reverb->SetTone(v); }
+
+    v = p_knob_5_capture.Process();
+    if (v != params.modulation) { params.modulation = v; current_reverb->SetModulation(v); }
+
+    v = p_knob_6_capture.Process();
+    if (v != params.diffusion) { params.diffusion = v; current_reverb->SetDiffusion(v); }
 
   } else if (pedal_mode == PEDAL_MODE_EDIT_DEVICE_SETTINGS) {
     // Device settings mode with switch capture (soft takeover)
@@ -1182,16 +1197,17 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     float rev_l, rev_r;
 
     // Switch active reverb algorithm based on toggle switch
+    // Select active reverb algorithm (parameters already applied via loadSettings
+    // or edit mode; no need to re-apply every block)
     switch (reverb.current_type) {
       case REVERB_PLATE:
         current_reverb = &plate_reverb;
-        updatePlateReverbParameters(); // Update plate-specific parameters
         break;
       case REVERB_CLOUD:
-        current_reverb = &cloud_reverb;
+        current_reverb = &ambient_reverb;
         break;
       case REVERB_ROOM:
-        current_reverb = &cloud_reverb_room;
+        current_reverb = &room_reverb;
         break;
     }
 
@@ -1340,28 +1356,28 @@ int main() {
 
   // Initialize Plate Reverb (Dattorro)
   plate_reverb.Init(hw.AudioSampleRate());
-  updatePlateReverbParameters();
 
   // Initialize CloudSeed Reverbs (shared pool, first Init() sets up shared resources)
-  cloud_reverb.Init(hw.AudioSampleRate());
-  cloud_reverb.SetPreset(5);       // Rubi-Ka Fields (ambient, spacious)
-  cloud_reverb_room.Init(hw.AudioSampleRate());
-  cloud_reverb_room.SetPreset(6);  // Small Room base, stretched into hall character
-  cloud_reverb_room.SetDecay(0.4f);  // Longer tail (was 0.30 — very short)
+  ambient_reverb.Init(hw.AudioSampleRate());
+  ambient_reverb.SetPreset(5);       // Rubi-Ka Fields (ambient, spacious)
+  ambient_reverb.SetOutputGain(1.5f); // Boost ambient output level to match plate reverb
+
+  room_reverb.Init(hw.AudioSampleRate());
+  room_reverb.SetPreset(6);  // Small Room base, stretched into hall character
 
   // Set default active reverb
   current_reverb = &plate_reverb;
 
+  // Default per-reverb edit parameters (matching preset values)
+  ReverbEditParams default_ambient = {0.0f, 0.83f, 0.8f, 0.055f, 0.715f};
+  ReverbEditParams default_plate   = {0.0f, 0.8f, 0.725f, 0.0f, 0.85f};
+  ReverbEditParams default_room    = {0.0f, 0.4f, 0.8f, 0.19f, 0.595f};
+
   Settings defaultSettings = {
     SETTINGS_VERSION,               // version
-    reverb.plate_decay,             // decay
-    reverb.plate_diffusion,         // diffusion
-    reverb.plate_input_damp_high,   // input_cutoff_freq
-    reverb.plate_tank_damp_high,    // tank_cutoff_freq
-    reverb.plate_mod_speed_pos,     // tank_mod_speed_pos
-    reverb.plate_mod_depth_pos,     // tank_mod_depth_pos
-    reverb.plate_mod_shape_pos,     // tank_mod_shape_pos
-    reverb.plate_pre_delay,         // pre_delay
+    default_ambient,                // ambient_params
+    default_plate,                  // plate_params
+    default_room,                   // room_params
     MS_MODE_MIMO,                   // mono_stereo_mode
     POLARITY_NORMAL,                // polarity_mode
     REVERB_KNOB_DRY_WET_MIX,       // reverb_knob_mode
@@ -1372,7 +1388,12 @@ int main() {
   };
   SavedSettings.Init(defaultSettings);
 
+  // loadSettings() queues saved parameters for all three reverb effects.
+  // ApplyPendingParams() then applies them synchronously (safe at startup
+  // since the audio callback hasn't started yet).
   loadSettings();
+  ambient_reverb.ApplyPendingParams();
+  room_reverb.ApplyPendingParams();
 
   Funbox::FootswitchCallbacks callbacks = {
     .HandleNormalPress = handleNormalPress,
@@ -1430,6 +1451,13 @@ int main() {
     } else if (is_factory_reset_mode) {
       runFactoryResetLoop();
     }
+
+    // Apply deferred CloudSeed parameter changes outside the audio ISR.
+    // CloudSeed's SetParameter triggers SHA-256 hashing and biquad coefficient
+    // recalculation — too expensive for the audio callback.
+    ambient_reverb.ApplyPendingParams();
+    room_reverb.ApplyPendingParams();
+
     hw.DelayMs(10);
   }
   return 0;

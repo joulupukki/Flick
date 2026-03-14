@@ -20,28 +20,18 @@
 
 namespace flick {
 
-// Constants for parameter scaling (from flick.cpp)
+// Constants for parameter scaling
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
 constexpr float PLATE_DAMP_SCALE = 10.0f;
 constexpr float PLATE_TANK_MOD_SPEED_SCALE = 8.0f;
 constexpr float PLATE_TANK_MOD_DEPTH_SCALE = 15.0f;
 
-// Switch position value mappings (from flick.cpp)
-constexpr float PLATE_TANK_MOD_SPEED_VALUES[] = {0.5f, 0.25f, 0.1f};
-constexpr float PLATE_TANK_MOD_DEPTH_VALUES[] = {0.5f, 0.25f, 0.1f};
-constexpr float PLATE_TANK_MOD_SHAPE_VALUES[] = {0.5f, 0.25f, 0.1f};
+// Hardcoded parameters (previously editable, now fixed to good defaults)
+constexpr float PLATE_INPUT_HIGH_CUT = 7.25f;   // Input high-cut filter pitch
+constexpr float PLATE_MOD_SHAPE = 0.25f;         // Tank modulation shape
 
 PlateReverb::PlateReverb()
     : verb_(48000, 16, 4.0f) {
-  // Initialize default parameters (from flick.cpp)
-  params_.decay = 0.8f;
-  params_.diffusion = 0.85f;
-  params_.pre_delay = 0.0f;
-  params_.input_cutoff_freq = 7.25f;  // Will be scaled by PLATE_DAMP_SCALE
-  params_.tank_cutoff_freq = 7.25f;   // Will be scaled by PLATE_DAMP_SCALE
-  params_.tank_mod_speed_pos = 2;     // Position 2 = 0.1
-  params_.tank_mod_depth_pos = 2;     // Position 2 = 0.1
-  params_.tank_mod_shape_pos = 1;     // Position 1 = 0.25
 }
 
 void PlateReverb::Init(float sample_rate) {
@@ -51,11 +41,15 @@ void PlateReverb::Init(float sample_rate) {
   verb_.enableInputDiffusion(true);
 
   // Set low-cut filters (pitch-based: 440 * 2^(pitch - 5))
-  // pitch = 2.87 -> 440 * 2^(-2.13) ≈ 100Hz
+  // pitch = 2.87 -> 440 * 2^(-2.13) ~ 100Hz
   verb_.setInputFilterLowCutoffPitch(2.87f);
   verb_.setTankFilterLowCutFrequency(2.87f);
 
-  // Apply all current parameters
+  // Hardcoded parameters
+  verb_.setInputFilterHighCutoffPitch(PLATE_INPUT_HIGH_CUT);
+  verb_.setTankModShape(PLATE_MOD_SHAPE);
+
+  // Apply editable parameters
   updateDattorroParameters();
 }
 
@@ -73,86 +67,39 @@ void PlateReverb::Clear() {
 }
 
 void PlateReverb::SetDecay(float decay) {
-  params_.decay = decay;
   verb_.setDecay(decay);
 }
 
 void PlateReverb::SetDiffusion(float diffusion) {
-  params_.diffusion = diffusion;
   verb_.setTankDiffusion(diffusion);
 }
 
 void PlateReverb::SetPreDelay(float pre_delay) {
-  params_.pre_delay = pre_delay;
-  // Pre-delay is scaled when applied to Dattorro
   verb_.setPreDelay(pre_delay * PLATE_PRE_DELAY_SCALE);
 }
 
-void PlateReverb::SetInputHighCut(float freq) {
-  params_.input_cutoff_freq = freq;
-  // Input high-cut uses pitch (scaled frequency)
-  verb_.setInputFilterHighCutoffPitch(freq * PLATE_DAMP_SCALE);
+void PlateReverb::SetTone(float tone) {
+  verb_.setTankFilterHighCutFrequency(tone * PLATE_DAMP_SCALE);
 }
 
-void PlateReverb::SetTankHighCut(float freq) {
-  params_.tank_cutoff_freq = freq;
-  // Tank high-cut uses frequency directly (scaled)
-  verb_.setTankFilterHighCutFrequency(freq * PLATE_DAMP_SCALE);
-}
-
-void PlateReverb::SetTankModSpeed(float speed) {
-  // Speed is passed as a switch position value (0.5, 0.25, or 0.1)
-  // Find which position this corresponds to
-  int pos = 0;
-  if (speed <= 0.15f) pos = 2;      // 0.1
-  else if (speed <= 0.375f) pos = 1; // 0.25
-  else pos = 0;                      // 0.5
-
-  params_.tank_mod_speed_pos = pos;
-  verb_.setTankModSpeed(PLATE_TANK_MOD_SPEED_VALUES[pos] * PLATE_TANK_MOD_SPEED_SCALE);
-}
-
-void PlateReverb::SetTankModDepth(float depth) {
-  // Depth is passed as a switch position value (0.5, 0.25, or 0.1)
-  int pos = 0;
-  if (depth <= 0.15f) pos = 2;      // 0.1
-  else if (depth <= 0.375f) pos = 1; // 0.25
-  else pos = 0;                      // 0.5
-
-  params_.tank_mod_depth_pos = pos;
-  verb_.setTankModDepth(PLATE_TANK_MOD_DEPTH_VALUES[pos] * PLATE_TANK_MOD_DEPTH_SCALE);
-}
-
-void PlateReverb::SetTankModShape(float shape) {
-  // Shape is passed as a switch position value (0.5, 0.25, or 0.1)
-  int pos = 0;
-  if (shape <= 0.15f) pos = 2;      // 0.1
-  else if (shape <= 0.375f) pos = 1; // 0.25
-  else pos = 0;                      // 0.5
-
-  params_.tank_mod_shape_pos = pos;
-  verb_.setTankModShape(PLATE_TANK_MOD_SHAPE_VALUES[pos]);
-}
-
-PlateReverb::Params PlateReverb::GetParams() const {
-  return params_;
-}
-
-void PlateReverb::SetParams(const Params& params) {
-  params_ = params;
-  updateDattorroParameters();
+void PlateReverb::SetModulation(float mod) {
+  // Single knob (0-1) controls both mod speed and depth together.
+  // Range 0.1-0.5 matches the original 3-position switch values.
+  float speed = 0.1f + mod * 0.4f;
+  float depth = 0.1f + mod * 0.4f;
+  verb_.setTankModSpeed(speed * PLATE_TANK_MOD_SPEED_SCALE);
+  verb_.setTankModDepth(depth * PLATE_TANK_MOD_DEPTH_SCALE);
 }
 
 void PlateReverb::updateDattorroParameters() {
-  // Apply all stored parameters to Dattorro
-  verb_.setDecay(params_.decay);
-  verb_.setTankDiffusion(params_.diffusion);
-  verb_.setPreDelay(params_.pre_delay * PLATE_PRE_DELAY_SCALE);
-  verb_.setInputFilterHighCutoffPitch(params_.input_cutoff_freq * PLATE_DAMP_SCALE);
-  verb_.setTankFilterHighCutFrequency(params_.tank_cutoff_freq * PLATE_DAMP_SCALE);
-  verb_.setTankModSpeed(PLATE_TANK_MOD_SPEED_VALUES[params_.tank_mod_speed_pos] * PLATE_TANK_MOD_SPEED_SCALE);
-  verb_.setTankModDepth(PLATE_TANK_MOD_DEPTH_VALUES[params_.tank_mod_depth_pos] * PLATE_TANK_MOD_DEPTH_SCALE);
-  verb_.setTankModShape(PLATE_TANK_MOD_SHAPE_VALUES[params_.tank_mod_shape_pos]);
+  // Default values for editable parameters (applied at init, overridden by loadSettings)
+  verb_.setDecay(0.8f);
+  verb_.setTankDiffusion(0.85f);
+  verb_.setPreDelay(0.0f);
+  verb_.setTankFilterHighCutFrequency(0.725f * PLATE_DAMP_SCALE);
+  // Default modulation: low (mod = 0.0 -> speed and depth both 0.1)
+  verb_.setTankModSpeed(0.1f * PLATE_TANK_MOD_SPEED_SCALE);
+  verb_.setTankModDepth(0.1f * PLATE_TANK_MOD_DEPTH_SCALE);
 }
 
 }  // namespace flick

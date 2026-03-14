@@ -46,16 +46,39 @@ public:
   void SetDecay(float decay) override;         // Maps to LineDecay
   void SetDiffusion(float diffusion) override;  // Maps to LateDiffusionFeedback
   void SetPreDelay(float pre_delay) override;   // Maps to PreDelay
+  void SetTone(float tone) override;            // Maps to PostCutoffFrequency
+  void SetModulation(float mod) override;       // Maps to LineModAmount
 
   // Preset selection (for experimentation — change preset and reflash)
   void SetPreset(int preset_index);
 
+  // Set output gain boost (for volume matching)
+  void SetOutputGain(float gain) { output_gain_ = gain; }
+
   // Number of available presets
   static const int kNumPresets = 9;
 
+  // Apply any pending deferred parameter changes (called from main loop)
+  void ApplyPendingParams();
+
 private:
   CloudSeed::ReverbController* controller_ = nullptr;
+  float output_gain_ = 1.0f;
   void applyFlickOverrides();  // Sets DryOut=0, LineCount to match TotalLineCount
+
+  // Deferred parameter updates — SetParameter triggers expensive operations
+  // (SHA-256 hashing in UpdateLines, biquad coefficient recalculation) that
+  // must NOT run inside the audio callback. Parameters are stored here and
+  // applied from the main loop via ApplyPendingParams().
+  struct PendingParams {
+    float pre_delay = -1.0f;
+    float decay = -1.0f;
+    float tone = -1.0f;
+    float modulation = -1.0f;
+    float diffusion = -1.0f;
+    bool has_pending = false;
+  };
+  volatile PendingParams pending_;
 
   // Block buffering: CloudSeed processes in blocks of 8 (matching Flick's audio callback).
   // All 8 output samples come from the same processing pass — no discontinuity.
