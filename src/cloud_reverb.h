@@ -61,10 +61,19 @@ public:
   // Apply any pending deferred parameter changes (called from main loop)
   void ApplyPendingParams();
 
+  // Deferred preset switch — call from audio callback, applied in main loop.
+  // Clears buffers, loads new preset, applies overrides.
+  void RequestPresetSwitch(int preset_index, float output_gain);
+  bool HasPendingPresetSwitch() const { return pending_preset_ >= 0; }
+  void ApplyPendingPresetSwitch();
+
 private:
   CloudSeed::ReverbController* controller_ = nullptr;
   float output_gain_ = 1.0f;
-  void applyFlickOverrides();  // Sets DryOut=0, LineCount to match TotalLineCount
+  int active_preset_ = -1;
+  int pending_preset_ = -1;
+  float pending_output_gain_ = 1.0f;
+  void applyFlickOverrides();  // Sets DryOut=0, LineCount, and preset-specific tweaks
 
   // Deferred parameter updates — SetParameter triggers expensive operations
   // (SHA-256 hashing in UpdateLines, biquad coefficient recalculation) that

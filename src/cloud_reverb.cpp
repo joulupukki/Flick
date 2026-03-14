@@ -50,9 +50,8 @@ void* custom_pool_allocate(size_t size) {
 
 namespace flick {
 
-// Shared resources initialized once across all CloudReverb instances.
-// The SDRAM pool, FPU mode, and lookup tables are shared — each instance's
-// ReverbController allocates sequentially from the same pool.
+// Shared resources initialized once. The SDRAM pool, FPU mode, and lookup
+// tables are set up on first Init() call.
 static bool s_shared_init_done = false;
 
 void CloudReverb::Init(float sample_rate) {
@@ -180,8 +179,23 @@ void CloudReverb::SetPreset(int preset_index) {
     if (controller_) {
         controller_->ClearBuffers();
         controller_->SetPreset(preset_index);
+        active_preset_ = preset_index;
         applyFlickOverrides();
     }
+}
+
+void CloudReverb::RequestPresetSwitch(int preset_index, float output_gain) {
+    pending_preset_ = preset_index;
+    pending_output_gain_ = output_gain;
+}
+
+void CloudReverb::ApplyPendingPresetSwitch() {
+    if (pending_preset_ < 0 || !controller_)
+        return;
+
+    SetPreset(pending_preset_);
+    output_gain_ = pending_output_gain_;
+    pending_preset_ = -1;
 }
 
 void CloudReverb::applyFlickOverrides() {
@@ -195,6 +209,19 @@ void CloudReverb::applyFlickOverrides() {
     // Force line count to match our TotalLineCount (1 per channel)
     // Presets have LineCount commented out, so this ensures it's set correctly.
     controller_->SetParameter(Parameter::LineCount, 1.0f);
+
+    // Preset-specific overrides — applied here rather than editing CloudSeed source.
+    // Preset 6 (Small Room): The factory preset has CutoffEnabled=0 and
+    // HighShelfEnabled=0, so high-frequency energy accumulates unchecked in the
+    // feedback loop, producing a harsh metallic tail. Enable both filters and
+    // increase diffusion to smooth the tail.
+    if (active_preset_ == 6) {
+        controller_->SetParameter(Parameter::CutoffEnabled, 1.0f);
+        controller_->SetParameter(Parameter::HighShelfEnabled, 1.0f);
+        controller_->SetParameter(Parameter::LateDiffusionStages, 0.71428573131561279f);  // 2 stages (max)
+        controller_->SetParameter(Parameter::LateDiffusionFeedback, 0.68f);
+        controller_->SetParameter(Parameter::DiffusionFeedback, 0.72f);
+    }
 }
 
 }  // namespace flick
