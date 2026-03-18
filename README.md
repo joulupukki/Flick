@@ -12,6 +12,10 @@ The Flick is a reverb, tremolo, and delay pedal. The original goal of this pedal
 
 ### Demo
 
+Quick demo - delay, plate reverb, and harmonic tremolo (18 March 2026):
+
+[![Quick Demo](https://img.youtube.com/vi/Ar1qbjuooIY/0.jpg)](https://www.youtube.com/watch?v=Ar1qbjuooIY)
+
 Feature demo video (28 June 2025):
 
 [![Demo Video](https://img.youtube.com/vi/pWW68mqj2iQ/0.jpg)](https://www.youtube.com/watch?v=pWW68mqj2iQ)
