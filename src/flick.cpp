@@ -405,6 +405,12 @@ PolarityMode polarity_mode = POLARITY_NORMAL;
 // Effect bypass states
 BypassState bypass;
 
+// Deferred tremolo toggle: delays the tremolo bypass change until after
+// the double-press window so a reverb double-press doesn't briefly
+// enable tremolo.
+uint32_t pending_tremolo_toggle_time = 0;
+bool tremolo_toggle_pending = false;
+
 // Reverb orchestrator
 ReverbOrchestrator reverb;
 
@@ -803,14 +809,20 @@ void handleNormalPress(Funbox::Switches footswitch) {
     pedal_mode = PEDAL_MODE_NORMAL;
   } else {
     if (footswitch == Funbox::FOOTSWITCH_1) {
-      // FOOTSWITCH_1: Toggle tremolo on/off
-      bypass.tremolo = !bypass.tremolo;
+      // FOOTSWITCH_1: Defer tremolo toggle until after double-press window
+      // so a reverb double-press doesn't briefly enable tremolo.
+      if (tremolo_toggle_pending) {
+        // A pending toggle already exists (second press reverting it) — cancel it
+        tremolo_toggle_pending = false;
+      } else {
+        tremolo_toggle_pending = true;
+        pending_tremolo_toggle_time = System::GetNow();
+      }
     } else {
       // FOOTSWITCH_2: Toggle delay on/off
       bypass.delay = !bypass.delay;
+      saveBypassStates();
     }
-
-    saveBypassStates();
   }
 }
 
@@ -835,11 +847,10 @@ void handleDoublePress(Funbox::Switches footswitch) {
     return;
   }
 
-  // When double press is detected, a normal press was already detected and
-  // processed, so reverse that right off the bat.
-  handleNormalPress(footswitch);
-
   if (footswitch == Funbox::FOOTSWITCH_1) {
+    // Cancel the pending tremolo toggle from the first press
+    tremolo_toggle_pending = false;
+
     // FOOTSWITCH_1 double press: Toggle reverb on/off
     bypass.reverb = !bypass.reverb;
 
@@ -853,6 +864,9 @@ void handleDoublePress(Funbox::Switches footswitch) {
 
     saveBypassStates();
   } else if (footswitch == Funbox::FOOTSWITCH_2) {
+    // Reverse the delay toggle from the first press
+    bypass.delay = !bypass.delay;
+
     // FOOTSWITCH_2 double press: Enter tap tempo mode
     enterTapTempo();
   }
@@ -987,6 +1001,14 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   }
   led_left.Update();
   led_right.Update();
+
+  // Apply deferred tremolo toggle after double-press window (600ms) has passed
+  if (tremolo_toggle_pending &&
+      (System::GetNow() - pending_tremolo_toggle_time) > 600) {
+    tremolo_toggle_pending = false;
+    bypass.tremolo = !bypass.tremolo;
+    saveBypassStates();
+  }
 
   reverb.wet = p_verb_amt.Process();
 
