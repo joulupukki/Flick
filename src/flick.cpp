@@ -970,7 +970,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       if (pedal_mode == PEDAL_MODE_TAP_TEMPO && tap_tempo.tap_flash_counter > 0) {
         // Brief flash on each tap (overrides rhythmic flash)
         tap_tempo.tap_flash_counter--;
-        led_right.Set(1.0f);
+        led_right.Set(TREMOLO_LED_BRIGHTNESS);
         delay_led_counter = 0;  // Sync rhythmic flash to tap
       } else if (!bypass.delay && delay_time_base > 0.0f) {
         // Pulse at quarter-note delay tempo (10% duty cycle), ignoring timing subdivision
@@ -978,7 +978,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         uint32_t period = (uint32_t)(delay_time_base * hw.AudioCallbackRate() / SAMPLE_RATE);
         if (period > 0) {
           delay_led_counter = (delay_led_counter + 1) % period;
-          led_right.Set(delay_led_counter < (period / 10) ? 1.0f : 0.0f);
+          led_right.Set(delay_led_counter < (period / 10) ? TREMOLO_LED_BRIGHTNESS : 0.0f);
         }
       } else {
         led_right.Set(0.0f);
