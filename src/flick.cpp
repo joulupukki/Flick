@@ -152,6 +152,9 @@ constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet per
 constexpr uint32_t TAP_TEMPO_TIMEOUT_MS = 4000; // Auto-exit after 4 seconds of no taps
 constexpr int TAP_FLASH_CALLBACKS = 300;         // ~50ms LED flash at 6000 callbacks/sec
 
+// Tremolo crossfade (prevents pops when toggling on/off)
+constexpr float TREMOLO_FADE_STEP = 1.0f / (SAMPLE_RATE * 0.03f); // ~30ms fade
+
 // Audio signal levels
 constexpr float MINUS_18DB_GAIN = 0.12589254f;
 constexpr float MINUS_20DB_GAIN = 0.1f;
@@ -410,6 +413,9 @@ BypassState bypass;
 // enable tremolo.
 uint32_t pending_tremolo_toggle_time = 0;
 bool tremolo_toggle_pending = false;
+
+// Tremolo crossfade level (0.0 = bypassed, 1.0 = fully active)
+float tremolo_fade = 0.0f;
 
 // Reverb orchestrator
 ReverbOrchestrator reverb;
@@ -1193,19 +1199,29 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       s_R = fdrywet * wet_R * 0.333f + (1.0f - fdrywet) * s_R * delay_make_up_gain;
     }
 
-    if (!bypass.tremolo) {
+    {
+      // Always process tremolo so the LFO stays in sync and we can crossfade
       float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.2f;
 
-      // Process tremolo effect
       float trem_out_L, trem_out_R;
       current_tremolo->ProcessSample(s_L, s_R, &trem_out_L, &trem_out_R);
-
-      // Apply makeup gain
-      s_L = trem_out_L * trem_make_up_gain;
-      s_R = trem_out_R * trem_make_up_gain;
-
-      // Store LFO value for LED pulsing
       trem_val = current_tremolo->GetLastLFOValue();
+
+      // Ramp tremolo_fade toward target to prevent pops
+      float target = bypass.tremolo ? 0.0f : 1.0f;
+      if (tremolo_fade < target) {
+        tremolo_fade = fminf(tremolo_fade + TREMOLO_FADE_STEP, target);
+      } else if (tremolo_fade > target) {
+        tremolo_fade = fmaxf(tremolo_fade - TREMOLO_FADE_STEP, target);
+      }
+
+      // Crossfade between dry and tremolo-processed signal
+      if (tremolo_fade > 0.0f) {
+        float wet_L = trem_out_L * trem_make_up_gain;
+        float wet_R = trem_out_R * trem_make_up_gain;
+        s_L = s_L * (1.0f - tremolo_fade) + wet_L * tremolo_fade;
+        s_R = s_R * (1.0f - tremolo_fade) + wet_R * tremolo_fade;
+      }
     }
 
     // Keep sending input to the reverb even if bypassed so that when it's
