@@ -33,11 +33,11 @@ Feature demo video (28 June 2025):
 | SWITCH 1 | Reverb Type | **LOW** - Hall<br/>**MID** - Plate<br/>**HIGH** - Spring |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
 | SWITCH 3 | Delay Timing | **LOW** - Triplet (1/3)<br/>**MID** - Quarter (straight)<br/>**HIGH** - Dotted Eighth (3/4) |
-| FOOTSWITCH 1 | Reverb On/Off | Normal press toggles reverb on/off.<br/>Double press enters Tap Tempo mode (see below).<br/>Long press toggles reverb edit mode (see below). |
-| FOOTSWITCH 2 | Tremolo/Delay On/Off | Normal press toggles tremolo.<br/>Double press toggles delay.<br/><br/>**LED:**<br/>- 100% when only delay is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active<br/>Long press for Device Settings (see below). |
+| FOOTSWITCH 1 | Tremolo/Reverb | Normal press toggles tremolo on/off.<br/>Double press toggles reverb on/off.<br/>Long press enters Reverb Edit Mode (see below).<br/><br/>**LED 1:**<br/>- 100% when only reverb is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active |
+| FOOTSWITCH 2 | Delay/Tap Tempo | Normal press toggles delay on/off.<br/>Double press enters Tap Tempo mode (see below).<br/>Long press for Device Settings (see below).<br/><br/>**LED 2:**<br/>- Pulsing at the quarter-note delay tempo when delay is active<br/>- Off when delay is not active |
 
 ### Controls (Tap Tempo Mode)
-*Right LED flashes at tapped tempo. Left LED shows reverb status as normal.*
+*LED 2 flashes at tapped tempo. LED 1 shows reverb/tremolo status as normal.*
 
 Entering Tap Tempo mode automatically enables delay if it is currently off.
 
@@ -46,7 +46,7 @@ Entering Tap Tempo mode automatically enables delay if it is currently off.
 | KNOB 4 | Delay Time | Ignored until physically rotated. Overrides tapped tempo when moved. |
 | SWITCH 3 | Delay Timing | Still applies timing subdivision to tapped tempo. |
 | FOOTSWITCH 1 | Exit Tap Tempo | Immediately returns to Normal Mode. |
-| FOOTSWITCH 2 | Register Tap | Each press registers a tap. LED flashes briefly on each tap.<br/>Tempo is averaged from the last 3 taps.<br/>Auto-exits after 4 seconds of no taps. |
+| FOOTSWITCH 2 | Register Tap | Each press registers a tap. LED 2 flashes briefly on each tap.<br/>Tempo is averaged from the last 3 taps.<br/>Auto-exits after 4 seconds of no taps. |
 
 ### Controls (Reverb Edit Mode)
 *Both LEDs flash when in Reverb Edit Mode.*
