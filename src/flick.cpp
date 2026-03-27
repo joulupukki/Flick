@@ -1002,9 +1002,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   led_left.Update();
   led_right.Update();
 
-  // Apply deferred tremolo toggle after double-press window (600ms) has passed
+  // Apply deferred tremolo toggle after double-press window has passed
   if (tremolo_toggle_pending &&
-      (System::GetNow() - pending_tremolo_toggle_time) > 600) {
+      (System::GetNow() - pending_tremolo_toggle_time) > Funbox::DOUBLE_PRESS_THRESHOLD_MS) {
     tremolo_toggle_pending = false;
     bypass.tremolo = !bypass.tremolo;
     saveBypassStates();
