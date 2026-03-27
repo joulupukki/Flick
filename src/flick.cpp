@@ -106,7 +106,7 @@ constexpr float SAMPLE_RATE = 48000.0f;
 constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 
 // Filter frequency constants (notch filters always active)
-constexpr float NOTCH_1_FREQ = 6020.0f;   // Daisy Seed resonance notch
+constexpr float NOTCH_1_FREQ = 6040.0f;   // Daisy Seed resonance notch
 constexpr float NOTCH_2_FREQ = 12278.0f;  // Daisy Seed resonance notch
 
 // Reverb constants (Dattorro plate reverb scaling)
@@ -1380,8 +1380,8 @@ int main() {
   current_tremolo = &sine_tremolo;  // Default
 
   // Initialize notch filters to remove resonant frequencies (always active)
-  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
-  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
+  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
+  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
   notch2_L.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
   notch2_R.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
 
