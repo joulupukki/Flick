@@ -106,7 +106,7 @@ constexpr float SAMPLE_RATE = 48000.0f;
 constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 
 // Filter frequency constants (notch filters always active)
-constexpr float NOTCH_1_FREQ = 6020.0f;   // Daisy Seed resonance notch
+constexpr float NOTCH_1_FREQ = 6040.0f;   // Daisy Seed resonance notch
 constexpr float NOTCH_2_FREQ = 12278.0f;  // Daisy Seed resonance notch
 
 // Reverb constants (Dattorro plate reverb scaling)
@@ -151,6 +151,9 @@ constexpr float DELAY_DRY_WET_PERCENT_MAX = 100.0f; // Max value for dry/wet per
 // Tap tempo constants
 constexpr uint32_t TAP_TEMPO_TIMEOUT_MS = 4000; // Auto-exit after 4 seconds of no taps
 constexpr int TAP_FLASH_CALLBACKS = 300;         // ~50ms LED flash at 6000 callbacks/sec
+
+// Tremolo crossfade (prevents pops when toggling on/off)
+constexpr float TREMOLO_FADE_STEP = 1.0f / (SAMPLE_RATE * 0.03f); // ~30ms fade
 
 // Audio signal levels
 constexpr float MINUS_18DB_GAIN = 0.12589254f;
@@ -405,11 +408,21 @@ PolarityMode polarity_mode = POLARITY_NORMAL;
 // Effect bypass states
 BypassState bypass;
 
+// Deferred tremolo toggle: delays the tremolo bypass change until after
+// the double-press window so a reverb double-press doesn't briefly
+// enable tremolo.
+uint32_t pending_tremolo_toggle_time = 0;
+bool tremolo_toggle_pending = false;
+
+// Tremolo crossfade level (0.0 = bypassed, 1.0 = fully active)
+float tremolo_fade = 0.0f;
+
 // Reverb orchestrator
 ReverbOrchestrator reverb;
 
 // Delay state
 float delay_time_target = 0.0f;  // Track delay time for tap tempo extraction
+float delay_time_base = 0.0f;   // Quarter-note base delay time (before timing subdivision)
 int delay_drywet;
 
 // Reverb mixing scale factors (updated when mono/stereo mode changes)
@@ -802,21 +815,20 @@ void handleNormalPress(Funbox::Switches footswitch) {
     pedal_mode = PEDAL_MODE_NORMAL;
   } else {
     if (footswitch == Funbox::FOOTSWITCH_1) {
-      bypass.reverb = !bypass.reverb;
-
-      if (bypass.reverb) {
-        // Clear the reverb tails when the reverb is bypassed so if you
-        // turn it back on, it starts fresh and doesn't sound weird.
-        if (current_reverb != nullptr) {
-          current_reverb->Clear();
-        }
+      // FOOTSWITCH_1: Defer tremolo toggle until after double-press window
+      // so a reverb double-press doesn't briefly enable tremolo.
+      if (tremolo_toggle_pending) {
+        // A pending toggle already exists (second press reverting it) — cancel it
+        tremolo_toggle_pending = false;
+      } else {
+        tremolo_toggle_pending = true;
+        pending_tremolo_toggle_time = System::GetNow();
       }
     } else {
-      // FOOTSWITCH_2: Toggle tremolo on/off
-      bypass.tremolo = !bypass.tremolo;
+      // FOOTSWITCH_2: Toggle delay on/off
+      bypass.delay = !bypass.delay;
+      saveBypassStates();
     }
-
-    saveBypassStates();
   }
 }
 
@@ -841,18 +853,28 @@ void handleDoublePress(Funbox::Switches footswitch) {
     return;
   }
 
-  // When double press is detected, a normal press was already detected and
-  // processed, so reverse that right off the bat.
-  handleNormalPress(footswitch);
-
   if (footswitch == Funbox::FOOTSWITCH_1) {
-    // FOOTSWITCH_1 double press: Enter tap tempo mode
-    enterTapTempo();
-  } else if (footswitch == Funbox::FOOTSWITCH_2) {
-    // FOOTSWITCH_2 double press: Toggle delay on/off
-    bypass.delay = !bypass.delay;
+    // Cancel the pending tremolo toggle from the first press
+    tremolo_toggle_pending = false;
+
+    // FOOTSWITCH_1 double press: Toggle reverb on/off
+    bypass.reverb = !bypass.reverb;
+
+    if (bypass.reverb) {
+      // Clear the reverb tails when the reverb is bypassed so if you
+      // turn it back on, it starts fresh and doesn't sound weird.
+      if (current_reverb != nullptr) {
+        current_reverb->Clear();
+      }
+    }
 
     saveBypassStates();
+  } else if (footswitch == Funbox::FOOTSWITCH_2) {
+    // Reverse the delay toggle from the first press
+    bypass.delay = !bypass.delay;
+
+    // FOOTSWITCH_2 double press: Enter tap tempo mode
+    enterTapTempo();
   }
 }
 
@@ -939,43 +961,60 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
   } else {
     // Normal mode (and tap tempo)
-    led_left.Set(bypass.reverb ? 0.0f : 1.0f);
 
-    if (pedal_mode == PEDAL_MODE_TAP_TEMPO) {
-      // Tap tempo right LED: rhythmic flash at tapped tempo
-      static uint32_t tap_led_counter = 0;
+    // LED 1 (left): reverb + tremolo status
+    // Reverb only: solid ON
+    // Tremolo only: pulsing at 40%
+    // Both: pulsing at 100%
+    // Neither: OFF
+    {
+      static int led_left_count = 0;
+      if (++led_left_count >= hw.AudioCallbackRate() / 100) {
+        led_left_count = 0;
+        if (!bypass.reverb && !bypass.tremolo) {
+          led_left.Set(trem_val);
+        } else if (!bypass.reverb) {
+          led_left.Set(1.0f);
+        } else if (!bypass.tremolo) {
+          led_left.Set(trem_val * TREMOLO_LED_BRIGHTNESS);
+        } else {
+          led_left.Set(0.0f);
+        }
+      }
+    }
 
-      if (tap_tempo.tap_flash_counter > 0) {
+    // LED 2 (right): delay tempo pulse
+    {
+      static uint32_t delay_led_counter = 0;
+
+      if (pedal_mode == PEDAL_MODE_TAP_TEMPO && tap_tempo.tap_flash_counter > 0) {
         // Brief flash on each tap (overrides rhythmic flash)
         tap_tempo.tap_flash_counter--;
-        led_right.Set(1.0f);
-        tap_led_counter = 0;  // Sync rhythmic flash to tap
-      } else if (tap_tempo.tapped_tempo_ms > 0.0f) {
-        // Continuous rhythmic flash at tapped tempo
-        uint32_t period = (uint32_t)(tap_tempo.tapped_tempo_ms * hw.AudioCallbackRate() / 1000.0f);
+        led_right.Set(TREMOLO_LED_BRIGHTNESS);
+        delay_led_counter = 0;  // Sync rhythmic flash to tap
+      } else if (!bypass.delay && delay_time_base > 0.0f) {
+        // Pulse at quarter-note delay tempo (10% duty cycle), ignoring timing subdivision
+        // Convert from samples to audio callbacks (samples / block_size)
+        uint32_t period = (uint32_t)(delay_time_base * hw.AudioCallbackRate() / SAMPLE_RATE);
         if (period > 0) {
-          tap_led_counter = (tap_led_counter + 1) % period;
-          led_right.Set(tap_led_counter < (period / 10) ? 1.0f : 0.0f);  // 10% duty cycle
+          delay_led_counter = (delay_led_counter + 1) % period;
+          led_right.Set(delay_led_counter < (period / 10) ? TREMOLO_LED_BRIGHTNESS : 0.0f);
         }
       } else {
-        // No tempo established yet, LED off
         led_right.Set(0.0f);
-      }
-    } else {
-      // Normal mode right LED (existing pulsing trem/delay logic)
-      static int count = 0;
-      // set led 100 times/sec
-      if (++count == hw.AudioCallbackRate() / 100) {
-        count = 0;
-        // If just delay is on, show full-strength LED
-        // If just trem is on, show 40% pulsing LED
-        // If both are on, show 100% pulsing LED
-        led_right.Set(bypass.tremolo ? bypass.delay ? 0.0f : 1.0f : bypass.delay ? trem_val * TREMOLO_LED_BRIGHTNESS : trem_val);
       }
     }
   }
   led_left.Update();
   led_right.Update();
+
+  // Apply deferred tremolo toggle after double-press window has passed
+  if (tremolo_toggle_pending &&
+      (System::GetNow() - pending_tremolo_toggle_time) > Funbox::DOUBLE_PRESS_THRESHOLD_MS) {
+    tremolo_toggle_pending = false;
+    bypass.tremolo = !bypass.tremolo;
+    saveBypassStates();
+  }
 
   reverb.wet = p_verb_amt.Process();
 
@@ -1063,6 +1102,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     // Apply timing subdivision (triplet, quarter, dotted eighth) in one place
+    delay_time_base = base_delay_time;
     delay_time_target = base_delay_time * kDelayTimingMultiplier[delay_timing];
     delay_effect.SetDelayTime(delay_time_target);
     delay_effect.SetFeedback(p_delay_feedback.Process());
@@ -1159,19 +1199,29 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       s_R = fdrywet * wet_R * 0.333f + (1.0f - fdrywet) * s_R * delay_make_up_gain;
     }
 
-    if (!bypass.tremolo) {
+    {
+      // Always process tremolo so the LFO stays in sync and we can crossfade
       float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.2f;
 
-      // Process tremolo effect
       float trem_out_L, trem_out_R;
       current_tremolo->ProcessSample(s_L, s_R, &trem_out_L, &trem_out_R);
-
-      // Apply makeup gain
-      s_L = trem_out_L * trem_make_up_gain;
-      s_R = trem_out_R * trem_make_up_gain;
-
-      // Store LFO value for LED pulsing
       trem_val = current_tremolo->GetLastLFOValue();
+
+      // Ramp tremolo_fade toward target to prevent pops
+      float target = bypass.tremolo ? 0.0f : 1.0f;
+      if (tremolo_fade < target) {
+        tremolo_fade = fminf(tremolo_fade + TREMOLO_FADE_STEP, target);
+      } else if (tremolo_fade > target) {
+        tremolo_fade = fmaxf(tremolo_fade - TREMOLO_FADE_STEP, target);
+      }
+
+      // Crossfade between dry and tremolo-processed signal
+      if (tremolo_fade > 0.0f) {
+        float wet_L = trem_out_L * trem_make_up_gain;
+        float wet_R = trem_out_R * trem_make_up_gain;
+        s_L = s_L * (1.0f - tremolo_fade) + wet_L * tremolo_fade;
+        s_R = s_R * (1.0f - tremolo_fade) + wet_R * tremolo_fade;
+      }
     }
 
     // Keep sending input to the reverb even if bypassed so that when it's
@@ -1330,8 +1380,8 @@ int main() {
   current_tremolo = &sine_tremolo;  // Default
 
   // Initialize notch filters to remove resonant frequencies (always active)
-  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
-  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
+  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
+  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
   notch2_L.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
   notch2_R.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
 

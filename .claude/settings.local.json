@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(make clean)"
+      "Bash(make clean)",
+      "Bash(make update-irs:*)",
+      "Bash(python3:*)",
+      "Bash(gh issue:*)",
+      "Bash(make)",
+      "Bash(make PLATFORM=hothouse)"
     ]
   }
 }

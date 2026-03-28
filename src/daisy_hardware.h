@@ -218,6 +218,8 @@ class DaisyHardware {
   AnalogControl knobs[KNOB_LAST]; /**< & */
   Switch switches[SWITCH_LAST];   /**< & */
 
+  static const uint32_t DOUBLE_PRESS_THRESHOLD_MS = 600;
+
  private:
   void SetHidUpdateRates();
   void InitSwitches();
@@ -231,7 +233,6 @@ class DaisyHardware {
   uint8_t footswitch_press_count[2] = {0, 0};
   bool footswitch_long_press_triggered[2] = {false, false};
   static const uint32_t HOLD_THRESHOLD_MS = 2000;  // 2 second hold time
-  static const uint32_t DOUBLE_PRESS_THRESHOLD_MS = 600;
 
   inline uint16_t* adc_ptr(const uint8_t chn) { return seed.adc.GetPtr(chn); }
 
