@@ -105,9 +105,12 @@ using daisysp::fonepole;
 constexpr float SAMPLE_RATE = 48000.0f;
 constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 
-// Filter frequency constants (notch filters always active)
-constexpr float NOTCH_1_FREQ = 6040.0f;   // Daisy Seed resonance notch
-constexpr float NOTCH_2_FREQ = 12278.0f;  // Daisy Seed resonance notch
+// Notch filter constants (always active)
+// Target the Daisy Seed's DMA/codec interference tone at the callback rate
+// (sample_rate / block_size) and its first harmonic. The tone is primarily
+// analog-domain but the notch filters provide partial attenuation.
+constexpr float NOTCH_1_FREQ = 6000.0f;   // Daisy Seed audio callback noise (48000/8)
+constexpr float NOTCH_2_FREQ = 12000.0f;  // First harmonic
 
 // Reverb constants (Dattorro plate reverb scaling)
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
@@ -1380,10 +1383,6 @@ int main() {
   current_tremolo = &sine_tremolo;  // Default
 
   // Initialize notch filters to remove resonant frequencies (always active)
-  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
-  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
-  notch2_L.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
-  notch2_R.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
 
   //
   // Reverb Initialization (all three types)
@@ -1411,6 +1410,12 @@ int main() {
   spring_reverb.SetDecay(0.7f); // Spring decay
   spring_reverb.SetMix(1.0f);   // 100% wet - it'll be mixed with Knob 1
   spring_reverb.SetDamping(7000.0f); // High-frequency damping
+
+  // Notch filters for Daisy Seed DMA/codec interference
+  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
+  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
+  notch2_L.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
+  notch2_R.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
 
   // Set default active reverb
   current_reverb = &plate_reverb;
