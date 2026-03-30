@@ -106,10 +106,11 @@ constexpr float SAMPLE_RATE = 48000.0f;
 constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 
 // Notch filter constants (always active)
-// Target the Daisy Seed's DMA/codec interference tone at the callback rate
-// (sample_rate / block_size) and its first harmonic. The tone is primarily
-// analog-domain but the notch filters provide partial attenuation.
-constexpr float NOTCH_1_FREQ = 16134.0f;  // DMA/codec interference at 96kHz/6 callback rate
+// Target the Daisy Seed's hardware interference tones. These appear to be
+// analog-domain noise from DMA/codec activity, not tied to the current
+// callback rate. The notch filters provide partial attenuation.
+constexpr float NOTCH_1_FREQ = 6037.7f;    // Primary hardware interference tone
+constexpr float NOTCH_2_FREQ = 16000.0f;   // Secondary interference tone
 
 // Reverb constants (Dattorro plate reverb scaling)
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
@@ -389,6 +390,8 @@ DelayEffect delay_effect;
 // Notch filters to remove Daisy Seed resonant frequencies (always active)
 PeakingEQ notch1_L;
 PeakingEQ notch1_R;
+PeakingEQ notch2_L;
+PeakingEQ notch2_R;
 
 // ============================================================================
 // UI HARDWARE
@@ -1201,9 +1204,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       s_R = dry_R;
     }
 
-    // Apply notch filters for resonant frequencies
+    // Apply notch filters for hardware interference tones
     s_L = notch1_L.Process(s_L);
     s_R = notch1_R.Process(s_R);
+    s_L = notch2_L.Process(s_L);
+    s_R = notch2_R.Process(s_R);
 
     if (!bypass.delay) {
       // Process delay effect (returns wet signal only)
@@ -1347,11 +1352,10 @@ void runFactoryResetLoop() {
 
 int main() {
   hw.Init(true); // Init the CPU at full speed
-  // Run the codec at 96kHz with block size 6 to push the DMA/callback
-  // interference tone to 16kHz. Block size 4 causes DMA artifacts that
-  // IIR filters expose; block size 6 is the minimum for clean operation.
+  // Run the codec at 96kHz with block size 4 to push the DMA/callback
+  // interference tone to 24kHz (above audible range).
   // DSP processes every other sample for an effective 48kHz rate.
-  hw.SetAudioBlockSize(6);
+  hw.SetAudioBlockSize(4);
   hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_96KHZ);
 
   // Initialize LEDs
@@ -1388,9 +1392,11 @@ int main() {
   harmonic_tremolo.Init(SAMPLE_RATE);
   current_tremolo = &sine_tremolo;  // Default
 
-  // Initialize notch filters to remove resonant frequencies (always active)
+  // Initialize notch filters to remove hardware interference tones (always active)
   notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, SAMPLE_RATE);
   notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, SAMPLE_RATE);
+  notch2_L.Init(NOTCH_2_FREQ, -30.0f, 20.0f, SAMPLE_RATE);
+  notch2_R.Init(NOTCH_2_FREQ, -30.0f, 20.0f, SAMPLE_RATE);
 
   //
   // Reverb Initialization (all three types)
