@@ -1167,6 +1167,26 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   float polarity_L = (polarity_mode == POLARITY_INVERT_LEFT) ? -1.0f : 1.0f;
   float polarity_R = (polarity_mode == POLARITY_INVERT_RIGHT) ? -1.0f : 1.0f;
 
+  // Pre-compute values that are constant across all samples in this callback
+  float fdrywet = delay_drywet / 100.0f;
+  float delay_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.66f;
+  float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.2f;
+  float reverb_gain = MINUS_18DB_GAIN * MINUS_20DB_GAIN * (1.0f + input_amplification * 7.0f) * clearPopCancelValue;
+
+  // Select active reverb algorithm and update parameters once per callback
+  switch (reverb.current_type) {
+    case REVERB_PLATE:
+      current_reverb = &plate_reverb;
+      updatePlateReverbParameters();
+      break;
+    case REVERB_SPRING:
+      current_reverb = &spring_reverb;
+      break;
+    case REVERB_HALL:
+      current_reverb = &hall_reverb;
+      break;
+  }
+
   // Process every other sample (96kHz codec → 48kHz effective DSP rate).
   for (size_t i = 0; i < size; i += 2) {
     float dry_L = in[0][i];
@@ -1186,9 +1206,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     s_R = notch1_R.Process(s_R);
 
     if (!bypass.delay) {
-      float fdrywet = delay_drywet / 100.0f;
-      float delay_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.66f;
-
       // Process delay effect (returns wet signal only)
       float wet_L, wet_R;
       delay_effect.ProcessSample(s_L, s_R, &wet_L, &wet_R);
@@ -1201,8 +1218,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
 
     {
       // Always process tremolo so the LFO stays in sync and we can crossfade
-      float trem_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.2f;
-
       float trem_out_L, trem_out_R;
       current_tremolo->ProcessSample(s_L, s_R, &trem_out_L, &trem_out_R);
       trem_val = current_tremolo->GetLastLFOValue();
@@ -1231,25 +1246,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     left_input = hardLimit100_(s_L) * reverb_dry_scale_factor;
     right_input = hardLimit100_(s_R) * reverb_dry_scale_factor;
 
-    float gain = MINUS_18DB_GAIN * MINUS_20DB_GAIN * (1.0f + input_amplification * 7.0f) * clearPopCancelValue;
     float rev_l, rev_r;
 
-    // Switch active reverb algorithm based on toggle switch
-    switch (reverb.current_type) {
-      case REVERB_PLATE:
-        current_reverb = &plate_reverb;
-        updatePlateReverbParameters(); // Update plate-specific parameters
-        break;
-      case REVERB_SPRING:
-        current_reverb = &spring_reverb;
-        break;
-      case REVERB_HALL:
-        current_reverb = &hall_reverb;
-        break;
-    }
-
     // Process reverb via polymorphic interface
-    current_reverb->ProcessSample(left_input * gain, right_input * gain, &rev_l, &rev_r);
+    current_reverb->ProcessSample(left_input * reverb_gain, right_input * reverb_gain, &rev_l, &rev_r);
 
     // Apply algorithm-specific gain adjustments
     if (reverb.current_type == REVERB_HALL) {
@@ -1259,8 +1259,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     if (!bypass.reverb) {
-      // left_output = ((left_input * reverb.dry * 0.1) + (verb.getLeftOutput() * reverb.wet * clearPopCancelValue));
-      // right_output = ((right_input * reverb.dry * 0.1) + (verb.getRightOutput() * reverb.wet * clearPopCancelValue));
       left_output = ((left_input * reverb.dry * reverb_reverse_scale_factor) + (rev_l * reverb.wet * clearPopCancelValue));
       right_output = ((right_input * reverb.dry * reverb_reverse_scale_factor) + (rev_r * reverb.wet * clearPopCancelValue));
 
