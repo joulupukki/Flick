@@ -109,8 +109,7 @@ constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
 // Target the Daisy Seed's DMA/codec interference tone at the callback rate
 // (sample_rate / block_size) and its first harmonic. The tone is primarily
 // analog-domain but the notch filters provide partial attenuation.
-constexpr float NOTCH_1_FREQ = 6000.0f;   // Daisy Seed audio callback noise (48000/8)
-constexpr float NOTCH_2_FREQ = 12000.0f;  // First harmonic
+constexpr float NOTCH_1_FREQ = 16134.0f;  // DMA/codec interference at 96kHz/6 callback rate
 
 // Reverb constants (Dattorro plate reverb scaling)
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
@@ -390,8 +389,6 @@ DelayEffect delay_effect;
 // Notch filters to remove Daisy Seed resonant frequencies (always active)
 PeakingEQ notch1_L;
 PeakingEQ notch1_R;
-PeakingEQ notch2_L;
-PeakingEQ notch2_R;
 
 // ============================================================================
 // UI HARDWARE
@@ -935,6 +932,7 @@ void handleLongPress(Funbox::Switches footswitch) {
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
                    size_t size) {
   static float trem_val;
+
   hw.ProcessAllControls();
 
   if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
@@ -1169,7 +1167,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
   float polarity_L = (polarity_mode == POLARITY_INVERT_LEFT) ? -1.0f : 1.0f;
   float polarity_R = (polarity_mode == POLARITY_INVERT_RIGHT) ? -1.0f : 1.0f;
 
-  for (size_t i = 0; i < size; ++i) {
+  // Process every other sample (96kHz codec → 48kHz effective DSP rate).
+  for (size_t i = 0; i < size; i += 2) {
     float dry_L = in[0][i];
     float dry_R = in[1][i];
     float s_L, s_R;
@@ -1185,8 +1184,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     // Apply notch filters for resonant frequencies
     s_L = notch1_L.Process(s_L);
     s_R = notch1_R.Process(s_R);
-    s_L = notch2_L.Process(s_L);
-    s_R = notch2_R.Process(s_R);
 
     if (!bypass.delay) {
       float fdrywet = delay_drywet / 100.0f;
@@ -1272,11 +1269,18 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     if (mono_stereo_mode == MS_MODE_MIMO) {
-      out[0][i] = ((s_L * 0.5f) + (s_R * 0.5f)) * polarity_L;
-      out[1][i] = 0.0f;
+      float mono = ((s_L * 0.5f) + (s_R * 0.5f)) * polarity_L;
+      out[0][i]   = mono;
+      out[0][i+1] = mono;
+      out[1][i]   = 0.0f;
+      out[1][i+1] = 0.0f;
     } else {
-      out[0][i] = s_L * polarity_L;
-      out[1][i] = s_R * polarity_R;
+      float out_L = s_L * polarity_L;
+      float out_R = s_R * polarity_R;
+      out[0][i]   = out_L;
+      out[0][i+1] = out_L;
+      out[1][i]   = out_R;
+      out[1][i+1] = out_R;
     }
   }
 }
@@ -1345,8 +1349,12 @@ void runFactoryResetLoop() {
 
 int main() {
   hw.Init(true); // Init the CPU at full speed
-  hw.SetAudioBlockSize(8);  // Number of samples handled per callback
-  hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
+  // Run the codec at 96kHz with block size 6 to push the DMA/callback
+  // interference tone to 16kHz. Block size 4 causes DMA artifacts that
+  // IIR filters expose; block size 6 is the minimum for clean operation.
+  // DSP processes every other sample for an effective 48kHz rate.
+  hw.SetAudioBlockSize(6);
+  hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_96KHZ);
 
   // Initialize LEDs
   led_left.Init(hw.seed.GetPin(Funbox::LED_1), false);
@@ -1369,20 +1377,22 @@ int main() {
   p_trem_speed.Init(hw.knobs[Funbox::KNOB_2], TREMOLO_SPEED_MIN, TREMOLO_SPEED_MAX, Parameter::LINEAR);
   p_trem_depth.Init(hw.knobs[Funbox::KNOB_3], 0.0f, TREMOLO_DEPTH_SCALE, Parameter::LINEAR);
 
-  p_delay_time.Init(hw.knobs[Funbox::KNOB_4], hw.AudioSampleRate() * DELAY_TIME_MIN_SECONDS, MAX_DELAY, Parameter::LOGARITHMIC);
+  p_delay_time.Init(hw.knobs[Funbox::KNOB_4], SAMPLE_RATE * DELAY_TIME_MIN_SECONDS, MAX_DELAY, Parameter::LOGARITHMIC);
   p_delay_feedback.Init(hw.knobs[Funbox::KNOB_5], 0.0f, 1.0f, Parameter::LINEAR);
   p_delay_amt.Init(hw.knobs[Funbox::KNOB_6], 0.0f, 100.0f, Parameter::LINEAR);
 
   // Initialize delay effect
-  delay_effect.Init(hw.AudioSampleRate(), &delMemL, &delMemR);
+  delay_effect.Init(SAMPLE_RATE, &delMemL, &delMemR);
 
   // Initialize tremolo effects
-  sine_tremolo.Init(hw.AudioSampleRate());
-  square_tremolo.Init(hw.AudioSampleRate());
-  harmonic_tremolo.Init(hw.AudioSampleRate());
+  sine_tremolo.Init(SAMPLE_RATE);
+  square_tremolo.Init(SAMPLE_RATE);
+  harmonic_tremolo.Init(SAMPLE_RATE);
   current_tremolo = &sine_tremolo;  // Default
 
   // Initialize notch filters to remove resonant frequencies (always active)
+  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, SAMPLE_RATE);
+  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, SAMPLE_RATE);
 
   //
   // Reverb Initialization (all three types)
@@ -1398,24 +1408,18 @@ int main() {
   hold = 1.0f;
 
   // Initialize Plate Reverb (Dattorro)
-  plate_reverb.Init(hw.AudioSampleRate());
+  plate_reverb.Init(SAMPLE_RATE);
   updatePlateReverbParameters();
 
   // Initialize Hall Reverb (Schroeder)
-  hall_reverb.Init(hw.AudioSampleRate());
+  hall_reverb.Init(SAMPLE_RATE);
   hall_reverb.SetDecay(0.95f); // Higher feedback for longer hall decay
 
   // Initialize Spring Reverb (Digital Waveguide)
-  spring_reverb.Init(hw.AudioSampleRate());
+  spring_reverb.Init(SAMPLE_RATE);
   spring_reverb.SetDecay(0.7f); // Spring decay
   spring_reverb.SetMix(1.0f);   // 100% wet - it'll be mixed with Knob 1
   spring_reverb.SetDamping(7000.0f); // High-frequency damping
-
-  // Notch filters for Daisy Seed DMA/codec interference
-  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
-  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 20.0f, hw.AudioSampleRate());
-  notch2_L.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
-  notch2_R.Init(NOTCH_2_FREQ, -30.0f, 40.0f, hw.AudioSampleRate());
 
   // Set default active reverb
   current_reverb = &plate_reverb;
