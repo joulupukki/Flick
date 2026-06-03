@@ -403,7 +403,8 @@ bool tremolo_toggle_pending = false;
 ReverbOrchestrator reverb;
 
 // Delay state
-float delay_time_target = 0.0f;  // Track delay time for tap tempo extraction
+float delay_time_target = 0.0f;  // Subdivided delay time (drives the audio repeats)
+float delay_time_base = 0.0f;    // Quarter-note base (before subdivision); drives the LED
 int delay_drywet;
 
 // Reverb mixing scale factors (updated when mono/stereo mode changes)
@@ -1005,10 +1006,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
         tap_tempo.tap_flash_counter--;
         led_right.Set(TREMOLO_LED_BRIGHTNESS);
         delay_led_counter = 0;  // Sync rhythmic flash to tap
-      } else if (!bypass.delay && delay_time_target > 0.0f) {
-        // Pulse at the active delay time (10% duty cycle), whether set by
-        // knob or tap tempo.
-        uint32_t period = (uint32_t)(delay_time_target * hw.AudioCallbackRate() / SAMPLE_RATE);
+      } else if (!bypass.delay && delay_time_base > 0.0f) {
+        // Pulse at the quarter-note tempo (10% duty cycle), whether set by
+        // knob or tap tempo. Uses the base time (not the subdivided delay)
+        // so the LED stays on the quarter note even with triplet/dotted repeats.
+        uint32_t period = (uint32_t)(delay_time_base * hw.AudioCallbackRate() / SAMPLE_RATE);
         if (period > 0) {
           delay_led_counter = (delay_led_counter + 1) % period;
           led_right.Set(delay_led_counter < (period / 10) ? TREMOLO_LED_BRIGHTNESS : 0.0f);
@@ -1114,7 +1116,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       }
     }
 
-    // Apply timing subdivision (triplet, quarter, dotted eighth) in one place
+    // Apply timing subdivision (triplet, quarter, dotted eighth) in one place.
+    // Keep the quarter-note base around so the LED flashes at the tapped/knob
+    // tempo regardless of the subdivision driving the audio repeats.
+    delay_time_base = base_delay_time;
     delay_time_target = base_delay_time * kDelayTimingMultiplier[delay_timing];
     delay_effect.SetDelayTime(delay_time_target);
     delay_effect.SetFeedback(p_delay_feedback.Process());
