@@ -110,10 +110,18 @@ constexpr float NOTCH_2_FREQ = 16000.0f;   // Secondary interference tone
 // Reverb constants (plate scaling now internal to PlateReverb)
 constexpr float AMBIENT_WET_BOOST = 0.1f;
 
-// Minimum knob 1 movement before the knob-driven reverb morphs (Room->Hall,
-// Ambient bloom) re-apply their parameters (guards against ADC jitter
-// constantly rescaling the tank).
-constexpr float REVERB_KNOB_EPSILON = 0.005f;
+// The knob-driven reverb morphs (Room->Hall, Ambient bloom) are slew-limited:
+// SetTimeScale and SetPreDelay snap delay read taps to their new positions
+// instantly, so applying raw knob steps rescaled the tank in audible jumps
+// (zipper/scratch while turning knob 1). Instead the morph position chases
+// the knob at a fixed rate — a full 0..1 sweep takes kReverbMorphSlewSeconds —
+// which keeps each per-callback tap movement sub-sample, and the interpolated
+// delay reads render that as a gentle, inaudible drift.
+constexpr float kReverbMorphSlewSeconds = 0.25f;
+
+// Once the morph is within this distance of the knob it stops chasing
+// (guards against ADC jitter constantly rescaling the tank at rest).
+constexpr float kReverbMorphDeadband = 0.002f;
 
 // Tremolo constants
 constexpr float TREMOLO_SPEED_MIN = 0.2f;              // Minimum tremolo speed in Hz
@@ -596,6 +604,10 @@ inline float timeScaleForType(ReverbType type) {
 // normal-mode callback (set whenever raw base params are pushed to
 // plate_reverb, e.g. edit mode or type change).
 float reverb_knob_applied = -1.0f;
+
+// Per-callback slew step for the knob-driven morphs. Set in main() from the
+// audio callback rate so a full 0..1 morph takes kReverbMorphSlewSeconds.
+float reverb_morph_step = 0.001f;
 
 /**
  * @brief Apply unified edit parameters to the plate reverb effect.
@@ -1210,16 +1222,32 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     }
 
     // Knob-1-driven morphs: Room grows from its small-room base voice into a
-    // hall; Ambient blooms into a longer, denser, more present wash. Only
-    // re-apply when the knob actually moves — SetTimeScale rescales every
-    // tank delay line, so this must not run on ADC jitter.
-    if (fabs(wet_knob - reverb_knob_applied) > REVERB_KNOB_EPSILON) {
-      if (reverb.current_type == REVERB_ROOM) {
-        applyReverbMorph(reverb.room, kRoomHallMorphTarget,
-                         kTimeScaleRoom, kTimeScaleRoomHall, wet_knob);
-      } else if (reverb.current_type == REVERB_AMBIENT) {
-        applyReverbMorph(reverb.ambient, kAmbientMorphTarget,
-                         kTimeScaleAmbient, kTimeScaleAmbient, wet_knob);
+    // hall; Ambient blooms into a longer, denser, more present wash. The
+    // morph position chases the knob one slew step per callback (see
+    // kReverbMorphSlewSeconds) instead of jumping to it, so the tank delay
+    // taps move sub-sample per callback. Sentinel -1 (type change, raw params
+    // just applied) snaps straight to the knob with no slew.
+    if (reverb.current_type == REVERB_ROOM ||
+        reverb.current_type == REVERB_AMBIENT) {
+      float morph_t = wet_knob;
+      bool apply_morph = true;
+      if (reverb_knob_applied >= 0.0f) {
+        float diff = wet_knob - reverb_knob_applied;
+        if (fabs(diff) > kReverbMorphDeadband) {
+          morph_t = reverb_knob_applied +
+                    daisysp::fclamp(diff, -reverb_morph_step, reverb_morph_step);
+        } else {
+          apply_morph = false; // settled — don't chase ADC jitter
+        }
+      }
+      if (apply_morph) {
+        if (reverb.current_type == REVERB_ROOM) {
+          applyReverbMorph(reverb.room, kRoomHallMorphTarget,
+                           kTimeScaleRoom, kTimeScaleRoomHall, morph_t);
+        } else {
+          applyReverbMorph(reverb.ambient, kAmbientMorphTarget,
+                           kTimeScaleAmbient, kTimeScaleAmbient, morph_t);
+        }
       }
     }
   } else if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
@@ -1417,6 +1445,10 @@ int main() {
   // This pushes DMA/callback noise above audible range while keeping 48kHz DSP.
   hw.SetAudioBlockSize(4);
   hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_96KHZ);
+
+  // Full 0..1 reverb morph (Room->Hall, Ambient bloom) spread across
+  // kReverbMorphSlewSeconds worth of audio callbacks.
+  reverb_morph_step = 1.0f / (kReverbMorphSlewSeconds * hw.AudioCallbackRate());
 
   // Initialize LEDs
   led_left.Init(hw.seed.GetPin(Funbox::LED_1), false);
