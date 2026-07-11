@@ -7,7 +7,7 @@ PLATFORM ?= funbox
 #USE_DAISYSP_LGPL=1
 
 # Base sources (common to all platforms)
-CPP_SOURCES = flick.cpp delay_effect.cpp tremolo_effect.cpp plate_reverb.cpp hall_reverb.cpp spring_reverb.cpp flick_oscillator.cpp daisy_hardware.cpp parameter_capture.cpp
+CPP_SOURCES = flick.cpp delay_effect.cpp tremolo_effect.cpp plate_reverb.cpp flick_oscillator.cpp daisy_hardware.cpp parameter_capture.cpp
 
 # Base includes
 C_INCLUDES = -I.. -I./PlateauNEVersio
@@ -22,6 +22,7 @@ endif
 # Pass PLATFORM to compiler as a define
 C_DEFS += -DPLATFORM=$(PLATFORM)
 C_DEFS += -DPLATFORM_$(PLATFORM)=1
+
 
 # Add PlateauNEVersio sources
 CPP_SOURCES += PlateauNEVersio/utilities/Utilities.cpp

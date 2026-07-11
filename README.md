@@ -4,7 +4,9 @@ The Flick is a reverb, tremolo, and delay pedal. The original goal of this pedal
 
 ### Effects
 
-**Platerra Reverb:** This is a plate reverb based on the Dattorro reverb.
+**Reverb:** Three reverb voices selectable via toggle switch: Ambient, plate, and room. The room reverb morphs into a spacious hall as the reverb knob is turned up, and the ambient reverb blooms into a longer, denser wash.
+
+All three reverb types have editable parameters (pre-delay, decay, tone, modulation, diffusion) via Reverb Edit Mode, with separate saved settings per reverb type.
 
 **Tremolo:** Tremolo with smooth sine wave, harmonic tremolo, and square wave (opto-like) settings.
 
@@ -30,11 +32,11 @@ Feature demo video (28 June 2025):
 | KNOB 4 | Delay Time |  |
 | KNOB 5 | Delay Feedback |  |
 | KNOB 6 | Delay Dry/Wet Amount |  |
-| SWITCH 1 | Reverb Type | **LOW** - Hall<br/>**MID** - Plate<br/>**HIGH** - Spring |
+| SWITCH 1 | Reverb Type | **LOW** - Room (morphs into a hall as Knob 1 is turned up)<br/>**MID** - Plate<br/>**HIGH** - Ambient (blooms longer/denser as Knob 1 is turned up) |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
 | SWITCH 3 | Delay Timing | **LOW** - Triplet (1/3)<br/>**MID** - Quarter (straight)<br/>**HIGH** - Dotted Eighth (3/4) |
-| FOOTSWITCH 1 | Tremolo/Reverb | Normal press toggles tremolo on/off.<br/>Double press toggles reverb on/off.<br/>Long press enters Reverb Edit Mode (see below).<br/><br/>**LED 1:**<br/>- 100% when only reverb is active<br/>- 40% pulsing when only tremolo is active<br/>- 100% pulsing when both are active |
-| FOOTSWITCH 2 | Delay/Tap Tempo | Normal press toggles delay on/off.<br/>Double press enters Tap Tempo mode (see below).<br/>Long press for Device Settings (see below).<br/><br/>**LED 2:**<br/>- Pulsing at the quarter-note delay tempo when delay is active<br/>- Off when delay is not active |
+| FOOTSWITCH 1 | Tremolo/Reverb | Normal press toggles tremolo on/off.<br/>Double press toggles reverb on/off.<br/>Long press enters Reverb Edit Mode (see below).<br/><br/>**LED 1:**<br/>- 100% when only reverb is active<br/>- 100% pulsing when only tremolo is active<br/>- 100% pulsing when both are active |
+| FOOTSWITCH 2 | Delay/Tap Tempo | Normal press toggles delay on/off.<br/>Double press enters Tap Tempo mode (see below).<br/>Long press for Device Settings (see below).<br/><br/>**LED 2:**<br/>- Pulsing at the active delay time when delay is active (knob or tap tempo)<br/>- Off when delay is not active |
 
 ### Controls (Tap Tempo Mode)
 *LED 2 flashes at tapped tempo. LED 1 shows reverb/tremolo status as normal.*
@@ -51,19 +53,19 @@ Entering Tap Tempo mode automatically enables delay if it is currently off.
 ### Controls (Reverb Edit Mode)
 *Both LEDs flash when in Reverb Edit Mode.*
 
-**Parameter Capture:** When entering Reverb Edit Mode, all knobs and switches freeze at their current values. To prevent sudden parameter jumps, each control remains frozen until you move it beyond a threshold (5% for knobs, any position change for switches). This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
+Edits the **currently selected** reverb type (Ambient, Plate, or Room). The reverb type is locked when entering edit mode — toggle switch 1 changes are ignored. Each reverb type has its own saved parameter set.
+
+**Parameter Capture:** When entering Reverb Edit Mode, all knobs freeze at their current values. To prevent sudden parameter jumps, each knob remains frozen until you move it beyond a 5% threshold. This allows you to adjust controls smoothly without parameter jumps when switching between normal and edit modes.
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
 | KNOB 1 | Reverb Amount (Wet) | Not saved. Just here for convenience. |
-| KNOB 2 | Pre Delay | 0 for Off, up to 0.25<br/>**Frozen until moved >5%** |
-| KNOB 3 | Decay | **Frozen until moved >5%** |
-| KNOB 4 | Tank Diffusion | **Frozen until moved >5%** |
-| KNOB 5 | Input High Cutoff Frequency | **Frozen until moved >5%** |
-| KNOB 6 | Tank High Cutoff Frequency | **Frozen until moved >5%** |
-| SWITCH 1 | Tank Mod Speed | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
-| SWITCH 2 | Tank Mod Depth | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
-| SWITCH 3 | Tank Mod Shape | **LOW** - Low<br/>**MID** - Medium<br/>**HIGH** - High<br/>**Frozen until position changes** |
+| KNOB 2 | Pre-delay | Delay before reverb starts<br/>**Frozen until moved >5%** |
+| KNOB 3 | Decay | Reverb tail length<br/>**Frozen until moved >5%** |
+| KNOB 4 | Tone | Brightness of the reverb tail (dark to bright)<br/>**Frozen until moved >5%** |
+| KNOB 5 | Modulation | Movement/shimmer in the reverb<br/>**Frozen until moved >5%** |
+| KNOB 6 | Diffusion | Density/smearing of the reverb tail<br/>**Frozen until moved >5%** |
+| SWITCHES | *(ignored)* | Toggle switches have no function in edit mode |
 | FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Reverb Edit Mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Reverb Edit Mode. |
 
@@ -74,13 +76,13 @@ Entering Tap Tempo mode automatically enables delay if it is currently off.
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
-| SWITCH 1 | Reverb Knob Function | **LOW** - 0% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 100% Dry, 0-100% Wet |
+| SWITCH 1 | *(ignored)* | The reverb dry/wet behaviour is fixed per reverb type. |
 | SWITCH 2 | Polarity | **LOW** - Invert Right<br/>**MID** - Normal<br/>**HIGH** - Invert Left |
 | SWITCH 3 | Mono/Stereo Mode | **LOW** - Mono in, Mono Out<br/>**MID** - Mono in, Stereo Out<br/>**HIGH** - Stereo In, Stereo Out |
 | FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Settings Edit Mode. |
 | FOOTSWITCH 2 | **SAVE** & Exit | Saves all parameters and exits Settings Edit Mode. |
 
-### Factory Reset (Restore default reverb parameters)
+### Factory Reset (Restore default settings for all reverb types)
 
 To enter factory reset mode, **press and hold** **Footswitch #2** when powering the pedal. The LED lights will alternatively blink slowly.
 
