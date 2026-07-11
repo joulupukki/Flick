@@ -91,9 +91,10 @@ using daisysp::fonepole;
 // CONSTANTS
 // ============================================================================
 
-/// Increment this when changing the settings struct so the software will know
-/// to reset to defaults if this ever changes.
-#define SETTINGS_VERSION 18
+/// Increment this when changing the settings struct — or when saved values
+/// change meaning (e.g. a parameter remap) or factory defaults change and
+/// must actually load — so the software resets to defaults on next boot.
+#define SETTINGS_VERSION 19
 
 // Audio configuration
 constexpr float SAMPLE_RATE = 48000.0f;
@@ -108,6 +109,11 @@ constexpr float NOTCH_2_FREQ = 16000.0f;   // Secondary interference tone
 
 // Reverb constants (plate scaling now internal to PlateReverb)
 constexpr float AMBIENT_WET_BOOST = 0.1f;
+
+// Minimum knob 1 movement before the knob-driven reverb morphs (Room->Hall,
+// Ambient bloom) re-apply their parameters (guards against ADC jitter
+// constantly rescaling the tank).
+constexpr float REVERB_KNOB_EPSILON = 0.005f;
 
 // Tremolo constants
 constexpr float TREMOLO_SPEED_MIN = 0.2f;              // Minimum tremolo speed in Hz
@@ -260,9 +266,29 @@ struct ReverbEditParams {
 
 // Default per-reverb edit parameters — single source of truth for factory defaults.
 // Used by ReverbOrchestrator (in-memory baseline) and defaultSettings in main() (flash baseline).
-constexpr ReverbEditParams kDefaultAmbientParams = {0.2f, 0.85f, 0.725f, 0.2f,  0.9f};
-constexpr ReverbEditParams kDefaultPlateParams   = {0.0f, 0.8f,  0.725f, 0.0f,  0.85f};
-constexpr ReverbEditParams kDefaultRoomParams    = {0.0f, 0.4f,  0.725f, 0.0f,  0.425f};
+constexpr ReverbEditParams kDefaultAmbientParams = {0.06f, 0.85f, 0.725f, 0.2f,  0.75f};
+constexpr ReverbEditParams kDefaultPlateParams   = {0.0f,  0.8f,  0.725f, 0.0f,  0.85f};
+constexpr ReverbEditParams kDefaultRoomParams    = {0.0f,  0.4f,  0.725f, 0.0f,  0.425f};
+
+// Per-mode tank size (timeScale). Scales all tank delay/allpass times —
+// bigger = physically larger space. Buffers are allocated for up to 4.0x.
+constexpr float kTimeScaleAmbient  = 1.6f;    // bigger space for the wash
+constexpr float kTimeScalePlate    = 1.0075f; // classic plate
+constexpr float kTimeScaleRoom     = 1.0075f; // Room base voice (knob 1 at 0)
+constexpr float kTimeScaleRoomHall = 1.8f;    // Room hall voice (knob 1 at max)
+
+// Knob-1 morph targets. Room and Ambient morph from their (editable) base
+// params toward these voices as knob 1 goes from 0 to 1; Room's timeScale
+// also morphs kTimeScaleRoom -> kTimeScaleRoomHall.
+// Field order: {pre_delay, decay, tone, modulation, diffusion}.
+//
+// Room -> hall: longer/brighter/denser, hall-sized.
+constexpr ReverbEditParams kRoomHallMorphTarget = {0.08f, 0.55f, 0.85f, 0.1f, 0.7f};
+// Ambient -> bloom: much longer hang time (decay is very sensitive near 1.0 —
+// 0.95 is "cathedral", 0.97+ nears infinite), transient dissolved into the
+// wash (diffusion), tail kept present instead of darkening away (tone),
+// +20 ms pre-delay, a touch more movement.
+constexpr ReverbEditParams kAmbientMorphTarget = {0.14f, 0.95f, 0.80f, 0.25f, 0.82f};
 
 // Persistent settings stored in QSPI flash
 struct Settings {
@@ -522,7 +548,9 @@ inline ReverbWetDryMix reverbMixForType(ReverbType type, float wet_knob) {
       dry = 1.0f - wet;
       break;
     case REVERB_ROOM:
-      dry = 1.0f;
+      // Hybrid blend: full dry at knob 0, dry recedes to 50% at knob max so
+      // the hall voice becomes prominent without ever losing the dry signal.
+      dry = 1.0f - 0.5f * wet_knob;
       break;
   }
 
@@ -555,17 +583,53 @@ inline void updateReverbScales(MonoStereoMode mode) {
   }
 }
 
+inline float timeScaleForType(ReverbType type) {
+  switch (type) {
+    case REVERB_AMBIENT: return kTimeScaleAmbient;
+    case REVERB_ROOM:    return kTimeScaleRoom;
+    default:             return kTimeScalePlate;
+  }
+}
+
+// Knob 1 value the knob-driven reverb morphs (Room->Hall, Ambient bloom)
+// were last applied at. Sentinel -1 forces a re-apply on the next
+// normal-mode callback (set whenever raw base params are pushed to
+// plate_reverb, e.g. edit mode or type change).
+float reverb_knob_applied = -1.0f;
+
 /**
  * @brief Apply unified edit parameters to the plate reverb effect.
  * Called on settings load, settings restore, reverb type change (normal mode),
  * and reverb edit mode entry.
  */
-void applyReverbEditParams(const ReverbEditParams& params) {
+void applyReverbEditParams(ReverbType type, const ReverbEditParams& params) {
+  plate_reverb.SetTimeScale(timeScaleForType(type));
   plate_reverb.SetPreDelay(params.pre_delay);
   plate_reverb.SetDecay(params.decay);
   plate_reverb.SetTone(params.tone);
   plate_reverb.SetModulation(params.modulation);
   plate_reverb.SetDiffusion(params.diffusion);
+  reverb_knob_applied = -1.0f; // raw params applied — knob adjustments must re-apply
+}
+
+inline float lerpf(float a, float b, float t) {
+  return a + (b - a) * t;
+}
+
+/**
+ * @brief Morph the reverb between its (editable) base voice and a fixed
+ * target voice, driven by knob 1 (t = 0 -> base, t = 1 -> target). The tank
+ * size morphs ts_from -> ts_to alongside the parameters.
+ */
+void applyReverbMorph(const ReverbEditParams& base, const ReverbEditParams& target,
+                      float ts_from, float ts_to, float t) {
+  plate_reverb.SetTimeScale(lerpf(ts_from, ts_to, t));
+  plate_reverb.SetPreDelay(lerpf(base.pre_delay, target.pre_delay, t));
+  plate_reverb.SetDecay(lerpf(base.decay, target.decay, t));
+  plate_reverb.SetTone(lerpf(base.tone, target.tone, t));
+  plate_reverb.SetModulation(lerpf(base.modulation, target.modulation, t));
+  plate_reverb.SetDiffusion(lerpf(base.diffusion, target.diffusion, t));
+  reverb_knob_applied = t;
 }
 
 // ============================================================================
@@ -602,7 +666,7 @@ void loadSettings() {
   // Apply the current type's params to plate_reverb. This handles the PLATE
   // case (where the first-callback last_reverb_type check won't fire). For
   // AMBIENT/ROOM, the check will apply the correct params on the first callback.
-  applyReverbEditParams(reverb.paramsForType(reverb.current_type));
+  applyReverbEditParams(reverb.current_type, reverb.paramsForType(reverb.current_type));
   }
 
 void saveReverbSettings() {
@@ -645,7 +709,7 @@ void restoreReverbSettings() {
   reverb.room = local_settings.room_params;
 
   // Re-apply to the effect that was being edited
-  applyReverbEditParams(reverb.paramsForType(reverb.edit_type));
+  applyReverbEditParams(reverb.edit_type, reverb.paramsForType(reverb.edit_type));
 }
 
 /// @brief Restore the device settings from the saved settings.
@@ -916,7 +980,7 @@ void handleLongPress(Funbox::Switches footswitch) {
     // Explicitly apply the locked type's params to plate_reverb, ensuring it is
     // in a known state when edit mode begins regardless of when the
     // last_reverb_type check last fired.
-    applyReverbEditParams(params);
+    applyReverbEditParams(reverb.edit_type, params);
 
     p_knob_2_capture.Capture(params.pre_delay);
     p_knob_3_capture.Capture(params.decay);
@@ -1125,16 +1189,38 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
     delay_effect.SetFeedback(p_delay_feedback.Process());
     delay_drywet = (int)p_delay_amt.Process();
 
-    ReverbWetDryMix mix = reverbMixForType(reverb.current_type, reverb.wet);
+    float wet_knob = reverb.wet; // raw knob 1, before the mix policy rewrites reverb.wet
+    ReverbWetDryMix mix = reverbMixForType(reverb.current_type, wet_knob);
     reverb.wet = mix.wet;
     reverb.dry = mix.dry;
 
     // When the reverb type changes (switch moved, or first callback after boot),
-    // apply the new type's saved parameters to plate_reverb.
+    // apply the new type's saved parameters to plate_reverb. Room and Ambient
+    // are skipped: their morphs below own all of their parameters, so a raw
+    // apply here would be immediately overwritten — just force the morph to
+    // re-apply instead.
     static ReverbType last_reverb_type = REVERB_PLATE;
     if (reverb.current_type != last_reverb_type) {
-      applyReverbEditParams(reverb.paramsForType(reverb.current_type));
+      if (reverb.current_type == REVERB_PLATE) {
+        applyReverbEditParams(reverb.current_type, reverb.paramsForType(reverb.current_type));
+      } else {
+        reverb_knob_applied = -1.0f;
+      }
       last_reverb_type = reverb.current_type;
+    }
+
+    // Knob-1-driven morphs: Room grows from its small-room base voice into a
+    // hall; Ambient blooms into a longer, denser, more present wash. Only
+    // re-apply when the knob actually moves — SetTimeScale rescales every
+    // tank delay line, so this must not run on ADC jitter.
+    if (fabs(wet_knob - reverb_knob_applied) > REVERB_KNOB_EPSILON) {
+      if (reverb.current_type == REVERB_ROOM) {
+        applyReverbMorph(reverb.room, kRoomHallMorphTarget,
+                         kTimeScaleRoom, kTimeScaleRoomHall, wet_knob);
+      } else if (reverb.current_type == REVERB_AMBIENT) {
+        applyReverbMorph(reverb.ambient, kAmbientMorphTarget,
+                         kTimeScaleAmbient, kTimeScaleAmbient, wet_knob);
+      }
     }
   } else if (pedal_mode == PEDAL_MODE_EDIT_REVERB) {
     // Edit mode: knobs 2-6 control the locked reverb type's parameters

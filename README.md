@@ -4,7 +4,7 @@ The Flick is a reverb, tremolo, and delay pedal. The original goal of this pedal
 
 ### Effects
 
-**Reverb:** Three reverb algorithms selectable via toggle switch: Ambient, plate, and room
+**Reverb:** Three reverb voices selectable via toggle switch: Ambient, plate, and room. The room reverb morphs into a spacious hall as the reverb knob is turned up, and the ambient reverb blooms into a longer, denser wash.
 
 All three reverb types have editable parameters (pre-delay, decay, tone, modulation, diffusion) via Reverb Edit Mode, with separate saved settings per reverb type.
 
@@ -32,7 +32,7 @@ Feature demo video (28 June 2025):
 | KNOB 4 | Delay Time |  |
 | KNOB 5 | Delay Feedback |  |
 | KNOB 6 | Delay Dry/Wet Amount |  |
-| SWITCH 1 | Reverb Type | **LOW** - Room<br/>**MID** - Plate<br/>**HIGH** - Ambient |
+| SWITCH 1 | Reverb Type | **LOW** - Room (morphs into a hall as Knob 1 is turned up)<br/>**MID** - Plate<br/>**HIGH** - Ambient (blooms longer/denser as Knob 1 is turned up) |
 | SWITCH 2 | Tremolo Type | **LOW** - Smooth<br/>**MID** - Harmonic<br/>**HIGH** - Opto |
 | SWITCH 3 | Delay Timing | **LOW** - Triplet (1/3)<br/>**MID** - Quarter (straight)<br/>**HIGH** - Dotted Eighth (3/4) |
 | FOOTSWITCH 1 | Tremolo/Reverb | Normal press toggles tremolo on/off.<br/>Double press toggles reverb on/off.<br/>Long press enters Reverb Edit Mode (see below).<br/><br/>**LED 1:**<br/>- 100% when only reverb is active<br/>- 100% pulsing when only tremolo is active<br/>- 100% pulsing when both are active |
@@ -76,7 +76,7 @@ Edits the **currently selected** reverb type (Ambient, Plate, or Room). The reve
 
 | CONTROL | DESCRIPTION | NOTES |
 |-|-|-|
-| SWITCH 1 | Reverb Knob Function | **LOW** - 0% Dry, 0-100% Wet<br/>**MID** - Dry/Wet Mix<br/>**HIGH** - 100% Dry, 0-100% Wet |
+| SWITCH 1 | *(ignored)* | The reverb dry/wet behaviour is fixed per reverb type. |
 | SWITCH 2 | Polarity | **LOW** - Invert Right<br/>**MID** - Normal<br/>**HIGH** - Invert Left |
 | SWITCH 3 | Mono/Stereo Mode | **LOW** - Mono in, Mono Out<br/>**MID** - Mono in, Stereo Out<br/>**HIGH** - Stereo In, Stereo Out |
 | FOOTSWITCH 1 | **CANCEL** & Exit | Discards parameter changes and exits Settings Edit Mode. |

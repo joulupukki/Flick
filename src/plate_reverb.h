@@ -54,6 +54,10 @@ public:
   void SetTone(float tone) override;
   void SetModulation(float mod) override;
 
+  // Tank size (timeScale): scales all tank delay/allpass times.
+  // 1.0 = classic plate; buffers support up to 4.0.
+  void SetTimeScale(float scale);
+
 private:
   Dattorro verb_;
 

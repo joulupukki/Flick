@@ -23,8 +23,6 @@ namespace flick {
 // Constants for parameter scaling
 constexpr float PLATE_PRE_DELAY_SCALE = 0.25f;
 constexpr float PLATE_DAMP_SCALE = 10.0f;
-constexpr float PLATE_TANK_MOD_SPEED_SCALE = 8.0f;
-constexpr float PLATE_TANK_MOD_DEPTH_SCALE = 15.0f;
 
 // Hardcoded parameters (previously editable, now fixed to good defaults)
 constexpr float PLATE_INPUT_HIGH_CUT = 7.25f;   // Input high-cut filter pitch
@@ -37,7 +35,9 @@ PlateReverb::PlateReverb()
 void PlateReverb::Init(float sample_rate) {
   sample_rate_ = sample_rate;
   verb_.setSampleRate(sample_rate);
-  verb_.setTimeScale(1.007500f);
+  // Tank size (timeScale) is owned by the orchestrator's per-mode kTimeScale*
+  // constants and applied via SetTimeScale before audio starts; the Dattorro
+  // default (1.0) is a valid placeholder until then.
   verb_.enableInputDiffusion(true);
 
   // Set low-cut filters (pitch-based: 440 * 2^(pitch - 5))
@@ -84,22 +84,27 @@ void PlateReverb::SetTone(float tone) {
 
 void PlateReverb::SetModulation(float mod) {
   // Single knob (0-1) controls both mod speed and depth together.
-  // Range 0.1-0.5 matches the original 3-position switch values.
-  float speed = 0.1f + mod * 0.4f;
-  float depth = 0.1f + mod * 0.4f;
-  verb_.setTankModSpeed(speed * PLATE_TANK_MOD_SPEED_SCALE);
-  verb_.setTankModDepth(depth * PLATE_TANK_MOD_DEPTH_SCALE);
+  // Depth stays within the Dattorro design ceiling of 1.0 (excursion =
+  // depth * 16 samples); speed is a 0.5-1.5x multiplier on the base LFO
+  // rates (0.10-0.18 Hz). Keeps the tail shimmering without audible
+  // pitch bending.
+  float speed = 0.5f + mod * 1.0f;
+  float depth = 0.1f + mod * 0.9f;
+  verb_.setTankModSpeed(speed);
+  verb_.setTankModDepth(depth);
+}
+
+void PlateReverb::SetTimeScale(float scale) {
+  verb_.setTimeScale(scale);
 }
 
 void PlateReverb::updateDattorroParameters() {
   // Default values for editable parameters (applied at init, overridden by loadSettings)
-  verb_.setDecay(0.8f);
-  verb_.setTankDiffusion(0.85f);
-  verb_.setPreDelay(0.0f);
-  verb_.setTankFilterHighCutFrequency(0.725f * PLATE_DAMP_SCALE);
-  // Default modulation: low (mod = 0.0 -> speed and depth both 0.1)
-  verb_.setTankModSpeed(0.1f * PLATE_TANK_MOD_SPEED_SCALE);
-  verb_.setTankModDepth(0.1f * PLATE_TANK_MOD_DEPTH_SCALE);
+  SetDecay(0.8f);
+  SetDiffusion(0.85f);
+  SetPreDelay(0.0f);
+  SetTone(0.725f);
+  SetModulation(0.0f);
 }
 
 }  // namespace flick

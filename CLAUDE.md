@@ -67,12 +67,15 @@ The audio callback processes samples in this order:
 
 #### 1. Reverb System
 
-Three reverb modes selectable via Toggle Switch 1 in normal mode, all using the same Dattorro plate reverb algorithm ([PlateauNEVersio/Dattorro.cpp](src/PlateauNEVersio/Dattorro.cpp)) but with different factory default parameters and dry/wet behaviour. There is a single `PlateReverb` instance; switching reverb type re-applies the saved parameter set for that type.
+Three reverb modes selectable via Toggle Switch 1 in normal mode, all using the same Dattorro plate reverb algorithm ([PlateauNEVersio/Dattorro.cpp](src/PlateauNEVersio/Dattorro.cpp)) but with different factory default parameters, dry/wet behaviour, and tank size (timeScale). There is a single `PlateReverb` instance; switching reverb type re-applies the saved parameter set and size for that type.
+
+Per-mode tank size (`kTimeScale*` constants in flick.cpp): Ambient 1.6, Plate 1.0075, Room 1.0075 morphing to 1.8 (see Room below). Buffers support up to 4.0×.
 
 **Ambient** (Toggle UP/RIGHT)
-- Default params: decay 0.85, diffusion 0.9, modulation 0.2, tone 0.725, pre-delay 0.0
-- Dry/wet behaviour: **ALL WET** (dry = 0, wet = knob 1)
-- Long, spacious sound with modulation for shimmer
+- Default (base) params: decay 0.85, diffusion 0.75, modulation 0.2, tone 0.725, pre-delay 0.06 (~15 ms)
+- Dry/wet behaviour: **Wet-biased crossfade** (wet = knob 1 + 0.1 boost, dry = 1 − wet)
+- **Ambient bloom morph**: knob 1 morphs all five params from the (editable) base toward a fixed bloom voice (`kAmbientMorphTarget` in flick.cpp: pre-delay 0.14 (~35 ms), decay 0.95, tone 0.80, mod 0.25, diffusion 0.82; tank size stays 1.6×). Low knob = the base ambient; max knob = a long-lingering, dense, present wash with the transient dissolved into it. Morph is normal-mode only; edit mode edits the base endpoint.
+- Long, spacious sound (1.6× tank size) with gentle modulation for shimmer
 
 **Plate** (Dattorro Algorithm, Toggle MIDDLE)
 - Default params: decay 0.8, diffusion 0.85, modulation 0.0, tone 0.725, pre-delay 0.0
@@ -81,9 +84,11 @@ Three reverb modes selectable via Toggle Switch 1 in normal mode, all using the 
 - Algorithm: [PlateauNEVersio/Dattorro.cpp](src/PlateauNEVersio/Dattorro.cpp), based on Jon Dattorro's 1997 reverb paper
 
 **Room** (Toggle DOWN/LEFT)
-- Default params: decay 0.4, diffusion 0.425, modulation 0.0, tone 0.725, pre-delay 0.0
-- Dry/wet behaviour: **ALL DRY** (dry = 1.0, wet = knob 1 adds reverb on top)
-- Shorter, denser sound for subtle room ambience
+- Default (base) params: decay 0.4, diffusion 0.425, modulation 0.0, tone 0.725, pre-delay 0.0
+- Dry/wet behaviour: **Hybrid blend** (dry = 1 − 0.5 × knob 1, wet = knob 1)
+- **Room→Hall morph**: knob 1 also morphs all five params plus tank size from the (editable) small-room base toward a fixed hall voice (`kRoomHallMorphTarget` in flick.cpp: pre-delay 0.08, decay 0.55, tone 0.85, mod 0.1, diffusion 0.7; size 1.0075 → 1.8). Low knob = subtle room, max knob = deep hall. Morph is normal-mode only; reverb edit mode edits the base (small-room) endpoint. A gentle pitch sweep while turning the knob is expected (size rescaling).
+
+**Modulation mapping** (`PlateReverb::SetModulation`): knob 0–1 → mod depth 0.1–1.0 (within the Dattorro design ceiling; excursion = depth × 16 samples) and LFO speed multiplier 0.5–1.5× the base rates (0.10–0.18 Hz). Gentle shimmer, no audible pitch bending.
 
 #### 2. Tremolo System
 
@@ -159,12 +164,12 @@ Simple digital delay with:
 - Controls mapped to effect parameters
 - Footswitch gestures:
   - Footswitch 1 (Left):
-    - Single press: Toggle reverb on/off
-    - Double press: Enter tap tempo mode
+    - Single press: Toggle tremolo on/off (deferred past the double-press window)
+    - Double press: Toggle reverb on/off
     - Long press: Enter reverb edit mode
   - Footswitch 2 (Right):
-    - Single press: Toggle tremolo on/off
-    - Double press: Toggle delay on/off
+    - Single press: Toggle delay on/off
+    - Double press: Enter tap tempo mode
     - Long press: Enter device settings
   - Both footswitches:
     - Simultaneous long press: Enter DFU (bootloader) mode
@@ -201,7 +206,7 @@ Simple digital delay with:
 - Footswitch 2: Save to flash
 
 **Tap Tempo Mode** (`PEDAL_MODE_TAP_TEMPO`)
-- Activated by double-press of Footswitch 1
+- Activated by double-press of Footswitch 2
 - Right LED flashes at tapped tempo; left LED shows reverb status
 - Delay is automatically enabled on entry if bypassed
 - Footswitch 2 registers taps (tempo averaged from last 3 taps)
@@ -228,9 +233,9 @@ struct ReverbEditParams {
 
 struct Settings {
   int version;              // SETTINGS_VERSION for migration
-  ReverbEditParams ambient_params;   // Ambient mode edit params (Dattorro, all-wet)
+  ReverbEditParams ambient_params;   // Ambient mode edit params (Dattorro, wet-biased)
   ReverbEditParams plate_params;     // Plate mode edit params (Dattorro, dry/wet mix)
-  ReverbEditParams room_params;      // Room mode edit params (Dattorro, all-dry)
+  ReverbEditParams room_params;      // Room mode edit params (Dattorro, hybrid blend + hall morph base)
   int mono_stereo_mode;     // I/O routing mode
   int polarity_mode;        // Phase inversion mode
   bool bypass_reverb;       // Reverb bypass state
@@ -308,11 +313,11 @@ make PLATFORM=hothouse
 | Switch 1 | Reverb type | Reverb type | *(ignored)* | *(ignored)* |
 | Switch 2 | Trem type | Trem type | *(ignored)* | Polarity |
 | Switch 3 | Delay timing | Delay timing | *(ignored)* | Mono/Stereo |
-| FSW 1 Single | Reverb on/off | Exit tap tempo | Cancel | Cancel |
-| FSW 1 Double | Enter tap tempo | - | - | - |
+| FSW 1 Single | Tremolo on/off | Exit tap tempo | Cancel | Cancel |
+| FSW 1 Double | Reverb on/off | - | - | - |
 | FSW 1 Long | Enter reverb edit | - | - | - |
-| FSW 2 Single | Tremolo on/off | Register tap | Save | Save |
-| FSW 2 Double | Delay on/off | - | - | - |
+| FSW 2 Single | Delay on/off | Register tap | Save | Save |
+| FSW 2 Double | Enter tap tempo | Register tap | - | - |
 | FSW 2 Long | Enter settings edit | - | - | - |
 | Both FSW Long | DFU mode | - | - | - |
 
@@ -426,7 +431,7 @@ SAMPLE_RATE = 48000.0f
 MAX_DELAY = 96000 samples (2 seconds)
 TREMOLO_SPEED_MIN = 0.2 Hz
 TREMOLO_SPEED_MAX = 16.0 Hz
-SETTINGS_VERSION = 17  // Increment on Settings struct change
+SETTINGS_VERSION = 19  // Increment on Settings struct change OR when saved values change meaning/defaults
 ```
 
 ## Development Notes
