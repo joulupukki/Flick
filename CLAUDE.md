@@ -56,8 +56,14 @@ The `DaisyHardware` class (aliased as `Funbox`) provides a unified hardware prox
 
 The audio callback processes samples in this order:
 
-1. **Input routing** (based on mono/stereo mode)
-2. **Notch filtering** (removes Daisy Seed resonant frequencies @ 6020Hz and 12278Hz)
+1. **Anti-alias filtering + 2:1 decimation** (96kHz codec → 48kHz DSP): every raw
+   96kHz input sample passes through a 4th-order elliptic low-pass at 18kHz
+   (`AntiAliasLowpass` in flick_filters.hpp) before decimation, so >~20kHz
+   interference (DMA/clock/switching hash) cannot fold into the audible band.
+   This replaced the naive "drop every other sample" decimation, which was the
+   root cause of a persistent aliased high-pitch tone. (Legacy 6k/12k notch
+   filters were removed once the anti-aliasing fix made them audibly redundant.)
+2. **Input routing** (based on mono/stereo mode)
 3. **Delay effect** (if enabled)
 4. **Tremolo effect** (if enabled, with three modes)
 5. **Reverb effect** (if enabled, with three types)

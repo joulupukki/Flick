@@ -46,7 +46,7 @@
  * - Coordinate the audio processing pipeline
  *
  * AUDIO SIGNAL FLOW:
- * Input → Notch Filters → Delay → Tremolo → Reverb → Output
+ * Input → Anti-alias LPF (before 2:1 decimation) → Delay → Tremolo → Reverb → Output
  *
  * Each effect is called via its polymorphic interface (e.g., current_tremolo->ProcessSample()).
  * Effects have no knowledge of knobs, switches, or UI - they're pure DSP.
@@ -99,17 +99,6 @@ using daisysp::fonepole;
 // Audio configuration
 constexpr float SAMPLE_RATE = 48000.0f;
 constexpr size_t MAX_DELAY = static_cast<size_t>(SAMPLE_RATE * 2.0f);
-
-// Notch filter constants (always active)
-// Target the Daisy Seed's hardware interference tones measured in the pedal
-// output: a narrowband tone at ~6.0kHz with a harmonic at ~12.0kHz. These are
-// notched in the decimated 48kHz DSP stream, so the notch filters MUST be
-// initialised with the effective DSP rate (SAMPLE_RATE = 48000), NOT the
-// 96kHz codec rate returned by hw.AudioSampleRate(). Initialising them at the
-// codec rate placed the notches at half the intended frequency (~3k/~8k),
-// leaving the real 6k/12k tones untouched.
-constexpr float NOTCH_1_FREQ = 6000.0f;    // Primary hardware interference tone
-constexpr float NOTCH_2_FREQ = 12000.0f;   // Harmonic of the primary tone
 
 // Reverb constants (plate scaling now internal to PlateReverb)
 constexpr float AMBIENT_WET_BOOST = 0.1f;
@@ -411,12 +400,6 @@ DelayEffect delay_effect;
 // to 48kHz. Stops >~20kHz interference from folding into the audible band.
 AntiAliasLowpass aa_in_L;
 AntiAliasLowpass aa_in_R;
-
-// Notch filters to remove Daisy Seed resonant frequencies (always active)
-PeakingEQ notch1_L;
-PeakingEQ notch1_R;
-PeakingEQ notch2_L;
-PeakingEQ notch2_R;
 
 // ============================================================================
 // UI HARDWARE
@@ -1319,12 +1302,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
       s_R = dry_R;
     }
 
-    // Apply notch filters for resonant frequencies
-    s_L = notch1_L.Process(s_L);
-    s_R = notch1_R.Process(s_R);
-    s_L = notch2_L.Process(s_L);
-    s_R = notch2_R.Process(s_R);
-
     if (!bypass.delay) {
       float fdrywet = delay_drywet / 100.0f;
       float delay_make_up_gain = makeup_gain == MAKEUP_GAIN_NONE ? 1.0f : 1.66f;
@@ -1504,15 +1481,6 @@ int main() {
   // into the audible band when we drop to the 48kHz DSP rate.
   aa_in_L.Init();
   aa_in_R.Init();
-
-  // Initialize notch filters to remove resonant frequencies (always active).
-  // Use SAMPLE_RATE (48000, the effective DSP rate after 2:1 decimation), not
-  // hw.AudioSampleRate() (the 96kHz codec rate) — the notches run inside the
-  // decimated loop, so the effective rate is what places them correctly.
-  notch1_L.Init(NOTCH_1_FREQ, -30.0f, 40.0f, SAMPLE_RATE);
-  notch1_R.Init(NOTCH_1_FREQ, -30.0f, 40.0f, SAMPLE_RATE);
-  notch2_L.Init(NOTCH_2_FREQ, -30.0f, 40.0f, SAMPLE_RATE);
-  notch2_R.Init(NOTCH_2_FREQ, -30.0f, 40.0f, SAMPLE_RATE);
 
   //
   // Reverb Initialization (all three types)
