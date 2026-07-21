@@ -52,17 +52,20 @@ The `DaisyHardware` class (aliased as `Funbox`) provides a unified hardware prox
 
 ### Audio Processing Pipeline
 
-[flick.cpp](src/flick.cpp:533-848) - `AudioCallback()`
+[flick.cpp](src/flick.cpp:1014-1370) - `AudioCallback()`
 
 The audio callback processes samples in this order:
 
 1. **Anti-alias filtering + 2:1 decimation** (96kHz codec → 48kHz DSP): every raw
-   96kHz input sample passes through a 4th-order elliptic low-pass at 18kHz
-   (`AntiAliasLowpass` in flick_filters.hpp) before decimation, so >~20kHz
+   96kHz input sample passes through a 6th-order elliptic low-pass at 14kHz
+   (`AntiAliasLowpass` in flick_filters.hpp) before decimation, so high-frequency
    interference (DMA/clock/switching hash) cannot fold into the audible band.
    This replaced the naive "drop every other sample" decimation, which was the
-   root cause of a persistent aliased high-pitch tone. (Legacy 6k/12k notch
-   filters were removed once the anti-aliasing fix made them audibly redundant.)
+   root cause of a persistent aliased high-pitch tone. The 14kHz cutoff (flat to
+   14kHz, so no audible effect on guitar) also attenuates residual input-side
+   ~17kHz EMI picked up at the guitar input and gives strong anti-aliasing at
+   Nyquist (-73dB @24k). (Legacy 6k/12k notch filters were removed once the
+   anti-aliasing fix made them audibly redundant.)
 2. **Input routing** (based on mono/stereo mode)
 3. **Delay effect** (if enabled)
 4. **Tremolo effect** (if enabled, with three modes)
@@ -151,6 +154,10 @@ Simple digital delay with:
 - `HighPassFilter`: One-pole high-pass
 - `PeakingEQ`: Biquad peaking/notch filter
 - `LowShelf`: Biquad low-shelf filter
+- `Biquad`: Generic Direct-Form-I biquad with externally supplied coefficients
+- `AntiAliasLowpass`: 6th-order elliptic low-pass @14kHz (three cascaded `Biquad`s)
+  applied to every 96kHz input sample before 2:1 decimation (see Audio Processing
+  Pipeline step 1)
 
 **Parameter Capture** - [parameter_capture.h](src/parameter_capture.h)
 - `KnobCapture`: Soft takeover for knob parameters in edit modes
