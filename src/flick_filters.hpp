@@ -107,28 +107,37 @@ struct Biquad {
     }
 };
 
-// 4th-order elliptic low-pass at 18kHz for Fs = 96kHz (two cascaded biquads).
+// 6th-order elliptic low-pass at 14kHz for Fs = 96kHz (three cascaded biquads).
 //
 // Applied to every raw 96kHz input sample BEFORE the 2:1 decimation to 48kHz.
 // The codec's ADC passes content up to ~45kHz, so naive decimation (dropping
 // every other sample) folds everything in 24-48kHz down into the audible band
 // (aliasing). High-frequency interference (DMA/clock/switching harmonics picked
 // up at the high-impedance guitar input) is the dominant source. This filter
-// removes that >~20kHz energy first so it cannot alias.
+// removes that energy first so it cannot alias.
 //
-// Response: flat to ~16kHz, -0.5dB @18k, -21dB @24k, -43dB @30k, -60dB @36k.
-// Coefficients: scipy.signal.ellip(4, 0.5, 60, 18000, fs=96000, output='sos').
+// The 14kHz cutoff also attenuates residual input-side EMI just below Nyquist
+// (a ~17kHz spike picked up by the guitar acting as an antenna) that a higher
+// cutoff let through. A guitar has no useful content above ~12kHz, so the
+// passband (flat to 14kHz) leaves the tone fully intact.
+//
+// Response: flat to ~14kHz (-0.3dB), -26dB @17k, -35dB @18k, -73dB @24k.
+// Stable in float32 DF1 (verified: impulse decays, outputs bounded).
+// Coefficients: scipy.signal.ellip(6, 0.3, 70, 14000, fs=96000, output='sos').
 struct AntiAliasLowpass {
-    Biquad s0, s1;
+    Biquad s0, s1, s2;
     void Init() {
-        s0.SetCoeffs(0.0344914288f, 0.0625980504f, 0.0344914288f,
-                     -0.9467461211f, 0.3382944553f);
-        s1.SetCoeffs(1.0000000000f, 1.1536117271f, 1.0000000000f,
-                     -0.6211912627f, 0.7437671787f);
+        s0.SetCoeffs(0.0043185288f, 0.0067808520f, 0.0043185288f,
+                     -1.3314503549f, 0.4908691622f);
+        s1.SetCoeffs(1.0000000000f, 0.2017033154f, 1.0000000000f,
+                     -1.1994078446f, 0.6797048071f);
+        s2.SetCoeffs(1.0000000000f, -0.3275247389f, 1.0000000000f,
+                     -1.1280097703f, 0.8955384302f);
         s0.Reset();
         s1.Reset();
+        s2.Reset();
     }
-    inline float Process(float x) { return s1.Process(s0.Process(x)); }
+    inline float Process(float x) { return s2.Process(s1.Process(s0.Process(x))); }
 };
 
 struct LowShelf {
