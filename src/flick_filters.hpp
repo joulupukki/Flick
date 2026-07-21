@@ -88,6 +88,49 @@ struct PeakingEQ {
     }
 };
 
+// Generic Direct-Form-I biquad with externally supplied (already a0-normalized)
+// coefficients. Used to build the anti-aliasing / reconstruction filters for
+// the 96kHz<->48kHz decimation stage. Same difference equation as PeakingEQ.
+struct Biquad {
+    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
+
+    void SetCoeffs(float nb0, float nb1, float nb2, float na1, float na2) {
+        b0 = nb0; b1 = nb1; b2 = nb2; a1 = na1; a2 = na2;
+    }
+    void Reset() { x1 = x2 = y1 = y2 = 0.0f; }
+
+    inline float Process(float x) {
+        float y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x; y2 = y1; y1 = y;
+        return y;
+    }
+};
+
+// 4th-order elliptic low-pass at 18kHz for Fs = 96kHz (two cascaded biquads).
+//
+// Applied to every raw 96kHz input sample BEFORE the 2:1 decimation to 48kHz.
+// The codec's ADC passes content up to ~45kHz, so naive decimation (dropping
+// every other sample) folds everything in 24-48kHz down into the audible band
+// (aliasing). High-frequency interference (DMA/clock/switching harmonics picked
+// up at the high-impedance guitar input) is the dominant source. This filter
+// removes that >~20kHz energy first so it cannot alias.
+//
+// Response: flat to ~16kHz, -0.5dB @18k, -21dB @24k, -43dB @30k, -60dB @36k.
+// Coefficients: scipy.signal.ellip(4, 0.5, 60, 18000, fs=96000, output='sos').
+struct AntiAliasLowpass {
+    Biquad s0, s1;
+    void Init() {
+        s0.SetCoeffs(0.0344914288f, 0.0625980504f, 0.0344914288f,
+                     -0.9467461211f, 0.3382944553f);
+        s1.SetCoeffs(1.0000000000f, 1.1536117271f, 1.0000000000f,
+                     -0.6211912627f, 0.7437671787f);
+        s0.Reset();
+        s1.Reset();
+    }
+    inline float Process(float x) { return s1.Process(s0.Process(x)); }
+};
+
 struct LowShelf {
     float b0, b1, b2, a1, a2;
     float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
