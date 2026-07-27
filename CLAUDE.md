@@ -52,7 +52,7 @@ The `DaisyHardware` class (aliased as `Funbox`) provides a unified hardware prox
 
 ### Audio Processing Pipeline
 
-[flick.cpp](src/flick.cpp:1014-1370) - `AudioCallback()`
+[flick.cpp](src/flick.cpp) - `AudioCallback()`
 
 The audio callback processes samples in this order:
 
@@ -101,7 +101,7 @@ Per-mode tank size (`kTimeScale*` constants in flick.cpp): Ambient 1.6, Plate 1.
 
 #### 2. Tremolo System
 
-[flick.cpp](src/flick.cpp:734-792)
+[flick.cpp](src/flick.cpp)
 
 Three tremolo modes via Toggle Switch 2:
 
@@ -131,7 +131,7 @@ Three tremolo modes via Toggle Switch 2:
 
 #### 3. Delay System
 
-[flick.cpp](src/flick.cpp:164-180)
+[flick.cpp](src/flick.cpp)
 
 Simple digital delay with:
 - Delay time: 50ms to 2 seconds (logarithmic), multiplied by timing subdivision
@@ -168,107 +168,20 @@ Simple digital delay with:
 - Switches activate on position change
 - Drop-in replacement for `Parameter::Process()` in audio callback
 
-### Operational Modes
+### Operational Modes and Controls
 
-[flick.cpp](src/flick.cpp:86-103)
-
-**Normal Mode** (`PEDAL_MODE_NORMAL`)
-- Standard pedal operation
-- Controls mapped to effect parameters
-- Footswitch gestures:
-  - Footswitch 1 (Left):
-    - Single press: Toggle tremolo on/off (deferred past the double-press window)
-    - Double press: Toggle reverb on/off
-    - Long press: Enter reverb edit mode
-  - Footswitch 2 (Right):
-    - Single press: Toggle delay on/off
-    - Double press: Enter tap tempo mode
-    - Long press: Enter device settings
-  - Both footswitches:
-    - Simultaneous long press: Enter DFU (bootloader) mode
-
-**Reverb Edit Mode** (`PEDAL_MODE_EDIT_REVERB`)
-- Activated by long-press of Footswitch 1
-- Both LEDs flash together
-- Edits the **currently selected** reverb type (locked on entry — toggle switch 1 changes are ignored)
-- Each reverb type has its own saved parameter set
-- Uses parameter capture (soft takeover) to prevent sudden jumps
-- Unified knob mapping (5 knobs, no toggle switches):
-  - Knob 2: **Pre-delay** — pre-delay time
-  - Knob 3: **Decay** — reverb tail length
-  - Knob 4: **Tone** — tank high-cut filter (brightness)
-  - Knob 5: **Modulation** — combined mod speed+depth
-  - Knob 6: **Diffusion** — tank diffusion (density)
-- Toggle switches are ignored in edit mode
-- Footswitch 1: Cancel (restore previous)
-- Footswitch 2: Save to flash
-
-**Device Settings** (`PEDAL_MODE_EDIT_DEVICE_SETTINGS`)
-- Activated by long-press of Footswitch 2
-- LEDs flash alternately
-- Toggle Switch 1: *(ignored)*
-- Toggle Switch 2 selects polarity:
-  - RIGHT/UP: Invert Left channel
-  - MIDDLE: Normal (no inversion)
-  - LEFT/DOWN: Invert Right channel
-- Toggle Switch 3 selects mono/stereo mode:
-  - LEFT: Mono In, Mono Out (MIMO)
-  - MIDDLE: Mono In, Stereo Out (MISO)
-  - RIGHT: Stereo In, Stereo Out (SISO)
-- Footswitch 1: Cancel
-- Footswitch 2: Save to flash
-
-**Tap Tempo Mode** (`PEDAL_MODE_TAP_TEMPO`)
-- Activated by double-press of Footswitch 2
-- Right LED flashes at tapped tempo; left LED shows reverb status
-- Delay is automatically enabled on entry if bypassed
-- Footswitch 2 registers taps (tempo averaged from last 3 taps)
-- Delay knob (Knob 4) frozen via KnobCapture until physically moved (overrides tapped tempo)
-- Toggle Switch 3 timing subdivision still applies to tapped tempo
-- Auto-exits after 4 seconds of no taps
-- Footswitch 1: Exit tap tempo (return to normal mode)
-- `just_exited_tap_tempo` flag prevents spurious double/long press events on exit
+Pedal controls, operational modes (reverb edit, device settings, tap tempo),
+the knob/switch mapping table, LED indicators, factory reset, and on-device
+debugging: see the `flick-ui-reference` skill.
 
 ### Persistent Settings
 
-[flick.cpp](src/flick.cpp:106-140)
+[flick.cpp](src/flick.cpp)
 
-Settings stored in QSPI flash via `PersistentStorage<Settings>`:
-
-```cpp
-struct ReverbEditParams {
-  float pre_delay;          // Pre-delay amount
-  float decay;              // Reverb decay / tail length
-  float tone;               // Brightness (high-cut filter)
-  float modulation;         // Movement / shimmer
-  float diffusion;          // Density / smearing
-};
-
-struct Settings {
-  int version;              // SETTINGS_VERSION for migration
-  ReverbEditParams ambient_params;   // Ambient mode edit params (Dattorro, wet-biased)
-  ReverbEditParams plate_params;     // Plate mode edit params (Dattorro, dry/wet mix)
-  ReverbEditParams room_params;      // Room mode edit params (Dattorro, hybrid blend + hall morph base)
-  int mono_stereo_mode;     // I/O routing mode
-  int polarity_mode;        // Phase inversion mode
-  bool bypass_reverb;       // Reverb bypass state
-  bool bypass_tremolo;      // Tremolo bypass state
-  bool bypass_delay;        // Delay bypass state
-  float tapped_delay_samples; // Persisted tap tempo delay time (0 = use knob)
-};
-```
-
-Version checking triggers factory reset if structure changes.
-
-### Factory Reset
-
-[flick.cpp](src/flick.cpp:973-1023)
-
-Initiated by holding Footswitch 2 during boot:
-1. LEDs blink alternately
-2. Rotate Knob 1: 0% → 100% → 0% → 100% → 0%
-3. Each stage increases blink rate
-4. Final step restores defaults and starts pedal
+Settings are stored in QSPI flash via `PersistentStorage<Settings>` (see the
+`Settings` / `ReverbEditParams` structs in flick.cpp). Each reverb type has its
+own saved `ReverbEditParams` set. Version checking triggers factory reset if the
+structure changes.
 
 ## Build System
 
@@ -279,23 +192,6 @@ Platform selection via `PLATFORM` variable:
 make              # Funbox (default)
 make PLATFORM=hothouse
 ```
-
-**Sources:**
-- Core: `flick.cpp`, `daisy_hardware.cpp`, `flick_oscillator.cpp`
-- Reverb: `plate_reverb.cpp`
-- Tremolo: `tremolo_effect.cpp`
-- Delay: `delay_effect.cpp`
-- PlateauNEVersio: Dattorro implementation and dependencies
-
-**Dependencies:**
-- libDaisy: Hardware abstraction for Daisy Seed
-- DaisySP: DSP library (delay lines, filters, etc.)
-
-**Compilation:**
-- C++ for STM32H750
-- Uses ARM CMSIS DSP
-- SDRAM for large delay buffers
-- QSPI flash for persistent storage
 
 ## Memory Management
 
@@ -310,35 +206,6 @@ make PLATFORM=hothouse
 **Stack/Heap:**
 - Reverb objects allocated statically
 - No dynamic allocation in audio callback
-
-## User Interface
-
-**Control Mapping:**
-
-| Control | Normal Mode | Tap Tempo | Reverb Edit | Settings Edit |
-|---------|-------------|-----------|-------------|---------------|
-| Knob 1  | Reverb amount | Reverb amount | Reverb amount | - |
-| Knob 2  | Trem speed | Trem speed | Pre-delay | - |
-| Knob 3  | Trem depth | Trem depth | Decay | - |
-| Knob 4  | Delay time | Delay time (frozen) | Tone | - |
-| Knob 5  | Delay feedback | Delay feedback | Modulation | - |
-| Knob 6  | Delay amount | Delay amount | Diffusion | - |
-| Switch 1 | Reverb type | Reverb type | *(ignored)* | *(ignored)* |
-| Switch 2 | Trem type | Trem type | *(ignored)* | Polarity |
-| Switch 3 | Delay timing | Delay timing | *(ignored)* | Mono/Stereo |
-| FSW 1 Single | Tremolo on/off | Exit tap tempo | Cancel | Cancel |
-| FSW 1 Double | Reverb on/off | - | - | - |
-| FSW 1 Long | Enter reverb edit | - | - | - |
-| FSW 2 Single | Delay on/off | Register tap | Save | Save |
-| FSW 2 Double | Enter tap tempo | Register tap | - | - |
-| FSW 2 Long | Enter settings edit | - | - | - |
-| Both FSW Long | DFU mode | - | - | - |
-
-**LED Indicators:**
-- Left LED: Reverb on/off
-- Right LED:
-  - Normal: Solid (delay only), 40% pulsing (tremolo only), 100% pulsing (both)
-  - Tap Tempo: Rhythmic flash at tapped tempo (10% duty cycle), brief flash on each tap
 
 ## Platform Differences
 
@@ -365,69 +232,8 @@ Flick uses a clean separation between UX orchestration and DSP processing:
 - **flick.cpp** - UX orchestrator (hardware I/O, modes, parameter processing, audio pipeline)
 - **Effect modules** - Hardware-independent DSP processors (base classes + derived algorithms)
 
-### File Structure
-
-```
-src/
-├── flick.cpp                    # UX orchestrator, audio callback, mode management
-├── daisy_hardware.h/cpp         # Hardware abstraction layer (Funbox/HotHouse)
-├── parameter_capture.h/cpp      # Soft takeover for edit modes
-│
-├── delay_effect.h/cpp           # Delay effect (stereo delay with feedback)
-│
-├── tremolo_effect.h/cpp         # Tremolo base class + 3 algorithms:
-│                                #   - SineTremolo (smooth)
-│                                #   - SquareTremolo (choppy opto-style)
-│                                #   - HarmonicTremolo (band-split + EQ)
-│
-├── reverb_effect.h              # Reverb base class (polymorphic interface)
-├── plate_reverb.h/cpp           # Plate reverb (Dattorro algorithm, all 3 modes)
-│
-├── flick_oscillator.h/cpp       # LFO/oscillator (used by tremolo effects)
-├── flick_filters.hpp            # DSP filter implementations
-│
-└── PlateauNEVersio/             # Third-party Dattorro implementation
-    ├── Dattorro.hpp/cpp         # Plate reverb core (wrapped by PlateReverb)
-    ├── dsp/
-    │   ├── delays/              # Delay line components
-    │   ├── filters/             # Filter components
-    │   └── modulation/          # LFO components
-    └── utilities/               # Utility functions
-```
-
-### Effect Class Hierarchy
-
-All effects use runtime polymorphism (virtual functions) for algorithm switching:
-
-```cpp
-// Tremolo: Base class with 3 derived algorithms
-class TremoloEffect {
-  virtual void ProcessSample(...) = 0;
-  virtual void SetSpeed(float hz);
-  virtual void SetDepth(float depth);
-};
-class SineTremolo : public TremoloEffect { /* smooth */ };
-class SquareTremolo : public TremoloEffect { /* choppy */ };
-class HarmonicTremolo : public TremoloEffect { /* band-split */ };
-
-// Reverb: Single concrete class, 3 modes via parameter sets
-class ReverbEffect {
-  virtual void ProcessSample(...) = 0;
-  virtual void SetDecay(float decay) {}      // Unified edit: Decay
-  virtual void SetDiffusion(float d) {}      // Unified edit: Diffusion
-  virtual void SetPreDelay(float p) {}       // Unified edit: Pre-delay
-  virtual void SetTone(float tone) {}        // Unified edit: Tone (brightness)
-  virtual void SetModulation(float mod) {}   // Unified edit: Modulation (shimmer)
-};
-class PlateReverb : public ReverbEffect { /* Dattorro — used for ambient, plate, and room */ };
-
-// Delay: Single class (no polymorphism needed)
-class DelayEffect {
-  void ProcessSample(...);
-  void SetDelayTime(float samples);
-  void SetFeedback(float feedback);
-};
-```
+Tremolo and reverb use runtime polymorphism (virtual functions) for algorithm
+switching; delay is a single class with no base.
 
 **Design principles:**
 - Effects are **pure DSP** - no knowledge of hardware, knobs, or switches
@@ -439,55 +245,13 @@ class DelayEffect {
 
 ## Key Constants
 
-```cpp
-SAMPLE_RATE = 48000.0f
-MAX_DELAY = 96000 samples (2 seconds)
-TREMOLO_SPEED_MIN = 0.2 Hz
-TREMOLO_SPEED_MAX = 16.0 Hz
-SETTINGS_VERSION = 19  // Increment on Settings struct change OR when saved values change meaning/defaults
-```
+`SETTINGS_VERSION` (in [flick.cpp](src/flick.cpp)) must be incremented on any
+`Settings` struct change **or** when saved values change meaning or defaults.
 
 ## Development Notes
 
-### Adding New Effects
-
-**Creating a new effect module:**
-1. Create effect class files (e.g., `chorus_effect.h/cpp`)
-2. Inherit from base class if multiple algorithms (or create standalone class)
-3. Implement `Init()`, `ProcessSample()`, and parameter setters
-4. Keep effect hardware-independent (no knob/switch knowledge)
-5. Add source file to [Makefile](src/Makefile) `CPP_SOURCES`
-
-**Integrating into orchestrator:**
-1. Include effect header in [flick.cpp](src/flick.cpp)
-2. Instantiate effect object(s)
-3. Call `Init()` in `main()`
-4. Call `ProcessSample()` in audio callback pipeline
-5. Map controls to effect parameters (via setters)
-6. Handle bypass logic and dry/wet mixing in orchestrator
-7. Add bypass state to Settings struct if persistent
-8. Update `SETTINGS_VERSION` if Settings struct changes
-
-### Modifying Hardware Abstraction
-- Changes to [daisy_hardware.h](src/daisy_hardware.h) affect both platforms
-- Use `#if defined(PLATFORM_funbox)` for platform-specific code
-- Keep logical switch mapping consistent
-
 ### Performance Considerations
-- Audio callback runs at 48kHz ÷ 8 samples = 6000 Hz
+- Codec runs at 96kHz with block size 4, so the audio callback fires at ~24kHz
 - Keep callback lean - complex logic outside
 - Use SDRAM for large buffers
 - Pre-calculate in main loop where possible
-
-### Debugging
-- USB Serial: `hw.seed.PrintLine()`
-- DFU mode: Hold both footswitches simultaneously for 2 seconds
-- Factory reset: Footswitch 2 during boot
-
-## Dependencies (Not Analyzed)
-
-- **libDaisy**: Daisy Seed hardware drivers
-- **DaisySP**: DSP library (delay, filters, etc.)
-- **PlateauNEVersio**: Third-party Dattorro reverb implementation
-
-These are included as git submodules and documented separately.
